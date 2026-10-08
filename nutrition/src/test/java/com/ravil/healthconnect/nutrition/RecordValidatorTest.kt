@@ -39,6 +39,7 @@ class RecordValidatorTest {
     @Test
     fun `blank name rejected`() {
         assertNotNull(RecordValidator.validate(valid().copy(name = "")))
+        assertNotNull(RecordValidator.validate(valid().copy(name = "   ")))
     }
 
     @Test
@@ -53,18 +54,35 @@ class RecordValidatorTest {
     }
 
     @Test
-    fun `energy exceeding limit rejected`() {
-        assertNotNull(RecordValidator.validate(valid().copy(energyKcal = 20_000.0)))
+    fun `energy exceeding 5000 kcal rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(energyKcal = 5_001.0)))
     }
 
     @Test
-    fun `zero energy is valid`() {
+    fun `energy at 5000 kcal accepted`() {
+        assertNull(RecordValidator.validate(valid().copy(energyKcal = 5_000.0)))
+    }
+
+    @Test
+    fun `zero energy with nonzero macros is valid`() {
         assertNull(RecordValidator.validate(valid().copy(energyKcal = 0.0)))
     }
 
+    // --- Required core macros ---
+
     @Test
-    fun `optional macros null passes`() {
-        assertNull(RecordValidator.validate(valid().copy(proteinG = null, carbohydrateG = null, fatG = null)))
+    fun `null protein rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(proteinG = null)))
+    }
+
+    @Test
+    fun `null carbohydrate rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(carbohydrateG = null)))
+    }
+
+    @Test
+    fun `null fat rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(fatG = null)))
     }
 
     @Test
@@ -73,9 +91,80 @@ class RecordValidatorTest {
     }
 
     @Test
-    fun `macro exceeding limit rejected`() {
-        assertNotNull(RecordValidator.validate(valid().copy(fatG = 3_000.0)))
+    fun `protein exceeding 500g rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(proteinG = 501.0)))
     }
+
+    @Test
+    fun `carbs exceeding 1000g rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(carbohydrateG = 1_001.0)))
+    }
+
+    @Test
+    fun `fat exceeding 500g rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(fatG = 501.0)))
+    }
+
+    // --- All-zero rejection ---
+
+    @Test
+    fun `all four core macros zero is rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(
+            energyKcal = 0.0,
+            proteinG = 0.0,
+            carbohydrateG = 0.0,
+            fatG = 0.0,
+        )))
+    }
+
+    @Test
+    fun `zero energy with nonzero protein is valid`() {
+        assertNull(RecordValidator.validate(valid().copy(energyKcal = 0.0, proteinG = 1.0)))
+    }
+
+    // --- Optional fields: fiber, sugar, sodium ---
+
+    @Test
+    fun `optional fiber null passes`() {
+        assertNull(RecordValidator.validate(valid().copy(fiberG = null)))
+    }
+
+    @Test
+    fun `optional fiber valid`() {
+        assertNull(RecordValidator.validate(valid().copy(fiberG = 10.0)))
+    }
+
+    @Test
+    fun `fiber exceeding 500g rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(fiberG = 501.0)))
+    }
+
+    @Test
+    fun `optional sugar valid`() {
+        assertNull(RecordValidator.validate(valid().copy(sugarG = 50.0)))
+    }
+
+    @Test
+    fun `sugar exceeding 500g rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(sugarG = 501.0)))
+    }
+
+    @Test
+    fun `optional sodium_mg valid`() {
+        assertNull(RecordValidator.validate(valid().copy(sodiumMg = 2_300.0)))
+    }
+
+    @Test
+    fun `sodium_mg exceeding 50000 mg rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(sodiumMg = 50_001.0)))
+    }
+
+    @Test
+    fun `negative sodium_mg rejected`() {
+        assertNotNull(RecordValidator.validate(valid().copy(sodiumMg = -1.0)))
+    }
+
+    // --- Time validation ---
 
     @Test
     fun `time without timezone rejected`() {

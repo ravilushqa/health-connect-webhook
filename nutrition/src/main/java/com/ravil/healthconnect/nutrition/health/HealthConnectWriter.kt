@@ -11,16 +11,16 @@ import com.ravil.healthconnect.nutrition.data.NutritionQueueRecord
 import com.ravil.healthconnect.nutrition.validation.RecordValidator
 import java.time.ZoneOffset
 
-class HealthConnectWriter(private val context: Context) {
+class HealthConnectWriter(private val context: Context) : HcWriterPort {
 
     private val writePermission = HealthPermission.getWritePermission(NutritionRecord::class)
 
-    fun isAvailable(): Boolean =
+    override fun isAvailable(): Boolean =
         HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
 
     private fun client(): HealthConnectClient = HealthConnectClient.getOrCreate(context)
 
-    suspend fun hasWritePermission(): Boolean {
+    override suspend fun hasWritePermission(): Boolean {
         if (!isAvailable()) return false
         return try {
             writePermission in client().permissionController.getGrantedPermissions()
@@ -34,35 +34,34 @@ class HealthConnectWriter(private val context: Context) {
     /**
      * Inserts or upserts a NutritionRecord into Health Connect.
      *
-     * Uses clientRecordId + clientRecordVersion for idempotent upsert behavior:
-     * - Same id + same version → no-op (HC ignores duplicate)
-     * - Same id + higher version → updates the record
-     * - Same id + lower version → HC retains the newer version (no downgrade)
+     * clientRecordId + clientRecordVersion provide idempotent upsert semantics:
+     * same id + same version → no-op; same id + higher version → update; lower → no downgrade.
      *
-     * recordingMethod = RECORDING_METHOD_MANUALLY_ENTERED marks these as
-     * user-confirmed AI estimates per the HC API contract.
+     * Optional fields (fiber, sugar, sodium) are mapped only when present — never guessed to zero.
+     * sodium_mg from the server is converted to grams (÷1000) for the HC Mass field.
+     *
+     * Since NutritionRecord has no description field, the description is appended to the name
+     * so AI-estimate annotations survive in the Health Connect record.
      */
-    suspend fun insertRecord(record: NutritionQueueRecord): Result<Unit> {
+    override suspend fun insertRecord(record: NutritionQueueRecord): Result<Unit> {
         if (!isAvailable()) return Result.failure(Exception("hc_not_available"))
         return try {
             val start = RecordValidator.parseOffset(record.startTime)!!
             val end = RecordValidator.parseOffset(record.endTime)!!
 
-            val startInstant = start.toInstant()
-            val endInstant = end.toInstant()
-            val startOffset: ZoneOffset = start.offset
-            val endOffset: ZoneOffset = end.offset
-
             val nutritionRecord = NutritionRecord(
-                startTime = startInstant,
-                startZoneOffset = startOffset,
-                endTime = endInstant,
-                endZoneOffset = endOffset,
+                startTime = start.toInstant(),
+                startZoneOffset = start.offset,
+                endTime = end.toInstant(),
+                endZoneOffset = end.offset,
                 energy = Energy.kilocalories(record.energyKcal),
                 protein = record.proteinG?.let { Mass.grams(it) },
                 totalCarbohydrate = record.carbohydrateG?.let { Mass.grams(it) },
                 totalFat = record.fatG?.let { Mass.grams(it) },
-                name = record.name,
+                dietaryFiber = record.fiberG?.let { Mass.grams(it) },
+                sugar = record.sugarG?.let { Mass.grams(it) },
+                sodium = record.sodiumMg?.let { Mass.grams(it / 1000.0) },
+                name = buildRecordName(record),
                 metadata = Metadata(
                     clientRecordId = record.clientRecordId,
                     clientRecordVersion = record.clientRecordVersion.toLong(),
@@ -75,5 +74,10 @@ class HealthConnectWriter(private val context: Context) {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun buildRecordName(record: NutritionQueueRecord): String {
+        val desc = record.description?.trim()
+        return if (!desc.isNullOrBlank()) "${record.name} [$desc]" else record.name
     }
 }

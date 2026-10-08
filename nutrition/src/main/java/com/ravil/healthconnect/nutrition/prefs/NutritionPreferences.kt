@@ -70,6 +70,14 @@ class NutritionPreferences(context: Context) {
         prefs.edit().putString(KEY_BOOKMARKS, Json.encodeToString(bookmarks)).apply()
     }
 
+    // --- pairing: track which server URL bookmarks belong to ---
+
+    fun getLastSyncBaseUrl(): String? = prefs.getString(KEY_LAST_SYNC_URL, null)
+
+    fun setLastSyncBaseUrl(url: String) {
+        prefs.edit().putString(KEY_LAST_SYNC_URL, url).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "nutrition_prefs"
         private const val KEY_BASE_URL = "base_url"
@@ -80,6 +88,7 @@ class NutritionPreferences(context: Context) {
         private const val KEY_LAST_ERROR = "counter_last_error"
         private const val KEY_LAST_MSG = "last_sync_msg"
         private const val KEY_BOOKMARKS = "insert_bookmarks"
+        private const val KEY_LAST_SYNC_URL = "last_sync_base_url"
         private const val DEFAULT_INTERVAL_MIN = 60
     }
 }

@@ -60,7 +60,7 @@ class NutritionApiParserTest {
     }
 
     @Test
-    fun `optional macros default to null when absent`() {
+    fun `core macros default to null when absent in json`() {
         val minimalJson = """
             {
               "schema_version": 1,
@@ -82,6 +82,41 @@ class NutritionApiParserTest {
     }
 
     @Test
+    fun `optional fiber sugar sodium parse correctly`() {
+        val withOptionals = """
+            {
+              "schema_version": 1,
+              "records": [{
+                "client_record_id": "r3",
+                "client_record_version": 1,
+                "name": "Salad",
+                "start_time": "2024-06-01T12:00:00Z",
+                "end_time": "2024-06-01T12:15:00Z",
+                "energy_kcal": 200.0,
+                "protein_g": 5.0,
+                "carbohydrate_g": 20.0,
+                "fat_g": 10.0,
+                "fiber_g": 5.0,
+                "sugar_g": 8.0,
+                "sodium_mg": 350.0
+              }]
+            }
+        """.trimIndent()
+        val record = json.decodeFromString<NutritionQueueResponse>(withOptionals).records[0]
+        assertEquals(5.0, record.fiberG!!, 0.001)
+        assertEquals(8.0, record.sugarG!!, 0.001)
+        assertEquals(350.0, record.sodiumMg!!, 0.001)
+    }
+
+    @Test
+    fun `optional fiber sugar sodium default to null when absent`() {
+        val record = json.decodeFromString<NutritionQueueResponse>(sampleJson).records[0]
+        assertNull(record.fiberG)
+        assertNull(record.sugarG)
+        assertNull(record.sodiumMg)
+    }
+
+    @Test
     fun `unknown fields ignored safely`() {
         val withExtras = """
             {
@@ -93,6 +128,9 @@ class NutritionApiParserTest {
                 "start_time": "2024-06-01T19:00:00Z",
                 "end_time": "2024-06-01T19:45:00Z",
                 "energy_kcal": 750.0,
+                "protein_g": 40.0,
+                "carbohydrate_g": 80.0,
+                "fat_g": 20.0,
                 "unknown_field_future": "ignored",
                 "vitamin_c_mg": 45.2
               }]
@@ -126,7 +164,7 @@ class NutritionApiParserTest {
     }
 
     @Test
-    fun `records list is bounded to 50`() {
+    fun `records list above 50 is detectable`() {
         val manyRecords = (1..60).joinToString(",") { i ->
             """{
               "client_record_id": "r$i",
@@ -134,12 +172,14 @@ class NutritionApiParserTest {
               "name": "Meal $i",
               "start_time": "2024-06-01T10:00:00Z",
               "end_time": "2024-06-01T10:30:00Z",
-              "energy_kcal": 300.0
+              "energy_kcal": 300.0,
+              "protein_g": 20.0,
+              "carbohydrate_g": 30.0,
+              "fat_g": 10.0
             }"""
         }
         val bigJson = """{"schema_version": 1, "records": [$manyRecords]}"""
         val response = json.decodeFromString<NutritionQueueResponse>(bigJson)
-        val taken = response.records.take(50)
-        assertEquals(50, taken.size)
+        assertTrue("expect >50 records to be detected", response.records.size > 50)
     }
 }

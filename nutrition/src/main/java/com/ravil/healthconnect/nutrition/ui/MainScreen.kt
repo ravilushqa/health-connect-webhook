@@ -221,9 +221,15 @@ fun MainScreen() {
         // Manual pull button
         Button(
             onClick = {
-                if (!isHcAvailable || !hasWritePermission) return@Button
+                if (!isHcAvailable) return@Button
                 scope.launch {
                     isSyncing = true
+                    val permitted = withContext(Dispatchers.IO) { writer.hasWritePermission() }
+                    if (!permitted) {
+                        hasWritePermission = false
+                        isSyncing = false
+                        return@launch
+                    }
                     withContext(Dispatchers.IO) {
                         NutritionSyncManager(context).performSync()
                     }

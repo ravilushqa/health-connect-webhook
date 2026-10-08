@@ -19,6 +19,9 @@ class VersioningTest {
         startTime = "2024-06-01T10:00:00Z",
         endTime = "2024-06-01T10:30:00Z",
         energyKcal = 400.0,
+        proteinG = 25.0,
+        carbohydrateG = 45.0,
+        fatG = 15.0,
     )
 
     // --- InsertBookmarks unit tests ---

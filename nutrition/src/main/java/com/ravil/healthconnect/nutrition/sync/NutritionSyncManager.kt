@@ -7,6 +7,8 @@ import com.ravil.healthconnect.nutrition.data.SyncResult
 import com.ravil.healthconnect.nutrition.health.HealthConnectWriter
 import com.ravil.healthconnect.nutrition.network.NutritionApiClient
 import com.ravil.healthconnect.nutrition.prefs.NutritionPreferences
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class NutritionSyncManager(private val context: Context) {
 
@@ -14,18 +16,28 @@ class NutritionSyncManager(private val context: Context) {
     private val tokenStore = TokenStore(context)
     private val writer = HealthConnectWriter(context)
 
-    suspend fun performSync(): SyncResult {
-        val baseUrl = prefs.getBaseUrl()
-            ?: return fail("no_base_url")
-        if (!baseUrl.startsWith("https://"))
-            return fail("url_not_https")
-        val token = tokenStore.getToken()
-            ?: return fail("no_token")
+    /**
+     * Single process-wide lock — prevents concurrent syncs from worker and manual trigger.
+     * Bookmarks are durable: they are persisted to disk before each ack attempt so that a
+     * crash between write and ack is recoverable on the next run (AckOnly path).
+     */
+    suspend fun performSync(): SyncResult = syncMutex.withLock { performSyncLocked() }
 
-        if (!writer.isAvailable())
-            return fail("hc_not_available")
-        if (!writer.hasWritePermission())
-            return fail("missing_write_nutrition_permission")
+    private suspend fun performSyncLocked(): SyncResult {
+        val baseUrl = prefs.getBaseUrl() ?: return fail("no_base_url")
+        if (!NutritionApiClient.isCanonicalHttpsUrl(baseUrl)) return fail("invalid_url")
+
+        val token = tokenStore.getToken() ?: return fail("no_token")
+
+        if (!writer.isAvailable()) return fail("hc_not_available")
+        if (!writer.hasWritePermission()) return fail("missing_write_nutrition_permission")
+
+        // Pairing reset: URL change means a different server/account — invalidate bookmarks
+        val lastSyncUrl = prefs.getLastSyncBaseUrl()
+        if (lastSyncUrl != null && lastSyncUrl != baseUrl) {
+            prefs.saveBookmarks(emptyMap())
+        }
+        prefs.setLastSyncBaseUrl(baseUrl)
 
         val apiClient = NutritionApiClient(baseUrl, token)
         val records = apiClient.fetchQueue().getOrElse { return fail("fetch_error") }
@@ -33,65 +45,35 @@ class NutritionSyncManager(private val context: Context) {
         prefs.setPendingCount(records.size)
         val bookmarks = InsertBookmarks.fromMap(prefs.getBookmarks())
 
-        val plan = planSync(records, bookmarks)
-        var applied = 0
-        var errors = 0
-        var ackFailed = 0
-        var updatedBookmarks = bookmarks
+        val result = executeSyncCycle(
+            records = records,
+            bookmarks = bookmarks,
+            transport = apiClient,
+            hcWriter = writer,
+            onBookmarkPersist = { updatedBm -> prefs.saveBookmarks(updatedBm.toMap()) },
+        )
 
-        for (action in plan) {
-            when (action) {
-                is RecordAction.Skip -> {
-                    errors++
-                }
-
-                is RecordAction.AckOnly -> {
-                    val ack = apiClient.ackRecord(
-                        action.record.clientRecordId,
-                        action.record.clientRecordVersion,
-                    )
-                    if (ack.isFailure) ackFailed++
-                }
-
-                is RecordAction.WriteAndAck -> {
-                    val write = writer.insertRecord(action.record)
-                    if (write.isSuccess) {
-                        // Persist bookmark BEFORE acking.
-                        // If ack fails here, next run detects AckOnly and retries ack.
-                        updatedBookmarks = updatedBookmarks.withApplied(
-                            action.record.clientRecordId,
-                            action.record.clientRecordVersion,
-                        )
-                        prefs.saveBookmarks(updatedBookmarks.toMap())
-                        applied++
-
-                        val ack = apiClient.ackRecord(
-                            action.record.clientRecordId,
-                            action.record.clientRecordVersion,
-                        )
-                        if (ack.isFailure) ackFailed++
-                    } else {
-                        errors++
-                    }
-                }
-            }
-        }
-
-        prefs.addApplied(applied)
-        prefs.setLastSyncErrorCount(errors)
-        val msg = if (errors == 0 && ackFailed == 0) "ok" else "ok_errors=${errors}_ackfail=${ackFailed}"
+        prefs.addApplied(result.applied)
+        prefs.setPendingCount(result.errors + result.ackFailed)
+        prefs.setLastSyncErrorCount(result.errors)
+        val msg = if (result.errors == 0 && result.ackFailed == 0) "ok"
+        else "ok_errors=${result.errors}_ackfail=${result.ackFailed}"
         prefs.setLastSyncMessage(msg)
 
         return SyncResult.Success(
-            applied = applied,
-            errors = errors,
-            ackFailed = ackFailed,
-            pending = plan.count { it is RecordAction.WriteAndAck } - applied,
+            applied = result.applied,
+            errors = result.errors,
+            ackFailed = result.ackFailed,
+            pending = result.errors + result.ackFailed,
         )
     }
 
     private fun fail(reason: String): SyncResult.Error {
         prefs.setLastSyncMessage("error:$reason")
         return SyncResult.Error(reason)
+    }
+
+    companion object {
+        internal val syncMutex = Mutex()
     }
 }

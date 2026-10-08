@@ -14,5 +14,8 @@ data class NutritionQueueRecord(
     @SerialName("protein_g") val proteinG: Double? = null,
     @SerialName("carbohydrate_g") val carbohydrateG: Double? = null,
     @SerialName("fat_g") val fatG: Double? = null,
+    @SerialName("fiber_g") val fiberG: Double? = null,
+    @SerialName("sugar_g") val sugarG: Double? = null,
+    @SerialName("sodium_mg") val sodiumMg: Double? = null,
     val description: String? = null,
 )

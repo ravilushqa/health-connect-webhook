@@ -27,6 +27,9 @@ class SyncPlanTest {
         startTime = "2024-06-01T10:00:00Z",
         endTime = "2024-06-01T10:30:00Z",
         energyKcal = 350.0,
+        proteinG = 20.0,
+        carbohydrateG = 40.0,
+        fatG = 12.0,
     )
 
     private fun invalidRecord(id: String) = NutritionQueueRecord(
