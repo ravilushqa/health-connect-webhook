@@ -58,24 +58,39 @@ class NutritionPreferences(context: Context) {
     // --- bookmarks: Map<clientRecordId, appliedVersion> ---
 
     fun getBookmarks(): Map<String, Int> {
-        val json = prefs.getString(KEY_BOOKMARKS, null) ?: return emptyMap()
+        val raw = prefs.getString(KEY_BOOKMARKS, null) ?: return emptyMap()
         return try {
-            Json.decodeFromString<Map<String, Int>>(json)
+            Json.decodeFromString<Map<String, Int>>(raw)
         } catch (_: Exception) {
             emptyMap()
         }
     }
 
+    /**
+     * Persists bookmarks synchronously (commit, not apply) so the bookmark is durably on disk
+     * before the caller proceeds to send an ACK. This ensures crash-recovery correctness:
+     * if the process dies between the commit and the ACK, the next run finds the bookmark and
+     * retries only the ACK (AckOnly path), not the write. Called on Dispatchers.IO; blocking
+     * is intentional and acceptable here.
+     */
+    @Suppress("CommitPrefEdits")
     fun saveBookmarks(bookmarks: Map<String, Int>) {
-        prefs.edit().putString(KEY_BOOKMARKS, Json.encodeToString(bookmarks)).apply()
+        prefs.edit().putString(KEY_BOOKMARKS, Json.encodeToString(bookmarks)).commit()
     }
 
-    // --- pairing: track which server URL bookmarks belong to ---
+    // --- pairing: fingerprint ties bookmarks to a specific URL+token combination ---
 
-    fun getLastSyncBaseUrl(): String? = prefs.getString(KEY_LAST_SYNC_URL, null)
+    /**
+     * Returns the stored pairing fingerprint for the last successful sync setup.
+     * The fingerprint is a truncated SHA-256 of (url + \0 + token) — changing either
+     * the server URL or the token will produce a different fingerprint and trigger a
+     * bookmark reset. The token itself is never stored here.
+     */
+    fun getPairingFingerprint(): String? = prefs.getString(KEY_PAIRING_FINGERPRINT, null)
 
-    fun setLastSyncBaseUrl(url: String) {
-        prefs.edit().putString(KEY_LAST_SYNC_URL, url).apply()
+    @Suppress("CommitPrefEdits")
+    fun setPairingFingerprint(fingerprint: String) {
+        prefs.edit().putString(KEY_PAIRING_FINGERPRINT, fingerprint).commit()
     }
 
     companion object {
@@ -88,7 +103,7 @@ class NutritionPreferences(context: Context) {
         private const val KEY_LAST_ERROR = "counter_last_error"
         private const val KEY_LAST_MSG = "last_sync_msg"
         private const val KEY_BOOKMARKS = "insert_bookmarks"
-        private const val KEY_LAST_SYNC_URL = "last_sync_base_url"
+        private const val KEY_PAIRING_FINGERPRINT = "pairing_fingerprint"
         private const val DEFAULT_INTERVAL_MIN = 60
     }
 }

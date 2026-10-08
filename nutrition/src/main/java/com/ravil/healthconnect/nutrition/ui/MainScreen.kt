@@ -237,7 +237,7 @@ fun MainScreen() {
                     isSyncing = false
                 }
             },
-            enabled = !isSyncing && isHcAvailable && hasWritePermission,
+            enabled = !isSyncing && isHcAvailable && hasWritePermission && syncEnabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (isSyncing) {

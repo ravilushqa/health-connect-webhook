@@ -13,6 +13,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.URI
 import java.util.concurrent.TimeUnit
@@ -20,14 +21,21 @@ import java.util.concurrent.TimeUnit
 class NutritionApiClient(
     private val baseUrl: String,
     private val token: String,
+    httpClient: OkHttpClient? = null,
 ) : Transport {
+
+    init {
+        require(isCanonicalHttpsUrl(baseUrl)) {
+            "NutritionApiClient requires a canonical HTTPS URL (no http, userinfo, query, or fragment)"
+        }
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = false
     }
 
-    private val http = OkHttpClient.Builder()
+    private val http: OkHttpClient = httpClient ?: OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
@@ -37,8 +45,8 @@ class NutritionApiClient(
 
     /**
      * Fetches pending nutrition records from GET /nutrition/queue.
-     * Token is sent in X-Nutrition-Token — never in URL or redirected.
-     * Rejects responses larger than MAX_RESPONSE_BYTES and lists with more than MAX_RECORDS items.
+     * Token is sent only in X-Nutrition-Token — never in URL, never on redirects (redirects
+     * are disabled entirely). Response body is bounded to MAX_RESPONSE_BYTES bytes.
      */
     override suspend fun fetchQueue(): Result<List<NutritionQueueRecord>> = withContext(Dispatchers.IO) {
         val url = "${baseUrl.trimEnd('/')}/nutrition/queue"
@@ -95,22 +103,27 @@ class NutritionApiClient(
         }
     }
 
+    /**
+     * Reads the response body into a String, counting raw bytes (not chars) against the limit.
+     * Multi-byte UTF-8 characters therefore contribute their actual encoded size, preventing
+     * a specially-crafted response from sneaking more data through a char-based limit.
+     */
     private fun readBoundedBody(response: Response): Result<String> {
         val responseBody = response.body
             ?: return Result.failure(IOException("empty_body"))
-        val reader = responseBody.charStream()
-        val sb = StringBuilder()
-        val buf = CharArray(8192)
-        var total = 0
+        val inputStream = responseBody.byteStream()
+        val buffer = ByteArrayOutputStream()
+        val chunk = ByteArray(8192)
+        var totalBytes = 0
         var n: Int
-        while (reader.read(buf).also { n = it } != -1) {
-            total += n
-            if (total > MAX_RESPONSE_BYTES) {
+        while (inputStream.read(chunk).also { n = it } != -1) {
+            totalBytes += n
+            if (totalBytes > MAX_RESPONSE_BYTES) {
                 return Result.failure(IOException("response_too_large"))
             }
-            sb.append(buf, 0, n)
+            buffer.write(chunk, 0, n)
         }
-        return Result.success(sb.toString())
+        return Result.success(buffer.toString(Charsets.UTF_8.name()))
     }
 
     companion object {
@@ -120,8 +133,8 @@ class NutritionApiClient(
 
         /**
          * Returns true only for HTTPS URLs with no userinfo, query, or fragment.
-         * Rejects HTTP, credentials in URL, and any query/fragment that could indicate
-         * a non-canonical endpoint.
+         * http://, credentials embedded in URL, query strings, and fragments are all rejected
+         * to prevent token leakage via redirects or unintended endpoint confusion.
          */
         fun isCanonicalHttpsUrl(url: String): Boolean = try {
             val uri = URI(url)

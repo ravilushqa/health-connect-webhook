@@ -68,16 +68,16 @@ class SyncOrchestratorTest {
 
         val transport = object : Transport {
             override suspend fun fetchQueue() = Result.success(listOf(record))
-            override suspend fun ackRecord(id: String, ver: Int): Result<Unit> {
-                callOrder.add("ack:$id")
+            override suspend fun ackRecord(clientRecordId: String, clientRecordVersion: Int): Result<Unit> {
+                callOrder.add("ack:$clientRecordId")
                 return Result.success(Unit)
             }
         }
         val writer = object : HcWriterPort {
             override fun isAvailable() = true
             override suspend fun hasWritePermission() = true
-            override suspend fun insertRecord(r: NutritionQueueRecord): Result<Unit> {
-                callOrder.add("write:${r.clientRecordId}")
+            override suspend fun insertRecord(record: NutritionQueueRecord): Result<Unit> {
+                callOrder.add("write:${record.clientRecordId}")
                 return Result.success(Unit)
             }
         }
@@ -120,8 +120,8 @@ class SyncOrchestratorTest {
 
         val transport = object : Transport {
             override suspend fun fetchQueue() = Result.success(listOf(record))
-            override suspend fun ackRecord(id: String, ver: Int): Result<Unit> {
-                ackCallOrder.add(id)
+            override suspend fun ackRecord(clientRecordId: String, clientRecordVersion: Int): Result<Unit> {
+                ackCallOrder.add(clientRecordId)
                 return Result.failure(IOException("simulated_crash"))
             }
         }
@@ -222,9 +222,9 @@ class SyncOrchestratorTest {
         var ackCount = 0
         val transport = object : Transport {
             override suspend fun fetchQueue() = Result.success(listOf(rec("a"), rec("b")))
-            override suspend fun ackRecord(id: String, ver: Int): Result<Unit> {
+            override suspend fun ackRecord(clientRecordId: String, clientRecordVersion: Int): Result<Unit> {
                 ackCount++
-                return if (id == "a") Result.failure(IOException("ack_fail_a"))
+                return if (clientRecordId == "a") Result.failure(IOException("ack_fail_a"))
                 else Result.success(Unit)
             }
         }
@@ -285,6 +285,40 @@ class SyncOrchestratorTest {
         joinAll(j1, j2)
 
         assertEquals(1, maxConcurrent)
+    }
+
+    // --- Pairing fingerprint: URL-only vs URL+token sensitivity ---
+
+    @Test
+    fun `pairing fingerprint changes when url changes`() {
+        val fp1 = NutritionSyncManager.computePairingFingerprint("https://server-a.example.com", "tok")
+        val fp2 = NutritionSyncManager.computePairingFingerprint("https://server-b.example.com", "tok")
+        assertTrue("Different URLs must produce different fingerprints", fp1 != fp2)
+    }
+
+    @Test
+    fun `pairing fingerprint changes when token rotates`() {
+        val fp1 = NutritionSyncManager.computePairingFingerprint("https://example.com", "token-A")
+        val fp2 = NutritionSyncManager.computePairingFingerprint("https://example.com", "token-B")
+        assertTrue("Rotated token must produce a different fingerprint", fp1 != fp2)
+    }
+
+    @Test
+    fun `pairing fingerprint is stable for same url and token`() {
+        val url = "https://example.com"
+        val tok = "same-token"
+        assertEquals(
+            NutritionSyncManager.computePairingFingerprint(url, tok),
+            NutritionSyncManager.computePairingFingerprint(url, tok),
+        )
+    }
+
+    @Test
+    fun `url prefix cannot collide with token suffix`() {
+        // "https://ab" + \0 + "c" must differ from "https://a" + \0 + "bc"
+        val fp1 = NutritionSyncManager.computePairingFingerprint("https://ab", "c")
+        val fp2 = NutritionSyncManager.computePairingFingerprint("https://a", "bc")
+        assertTrue("Null-byte separator prevents prefix/suffix collision", fp1 != fp2)
     }
 
     // --- Description field preserved through executor ---

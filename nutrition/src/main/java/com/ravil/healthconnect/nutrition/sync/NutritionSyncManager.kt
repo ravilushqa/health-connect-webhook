@@ -9,6 +9,7 @@ import com.ravil.healthconnect.nutrition.network.NutritionApiClient
 import com.ravil.healthconnect.nutrition.prefs.NutritionPreferences
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.security.MessageDigest
 
 class NutritionSyncManager(private val context: Context) {
 
@@ -17,13 +18,18 @@ class NutritionSyncManager(private val context: Context) {
     private val writer = HealthConnectWriter(context)
 
     /**
-     * Single process-wide lock — prevents concurrent syncs from worker and manual trigger.
-     * Bookmarks are durable: they are persisted to disk before each ack attempt so that a
-     * crash between write and ack is recoverable on the next run (AckOnly path).
+     * Single process-wide lock — prevents concurrent syncs from the background worker and any
+     * manual trigger. Settings/pairing checks are also inside the lock so a URL or token change
+     * made while a sync is in flight is observed only by the *next* sync, not the current one.
+     *
+     * isSyncEnabled is checked here for both manual and worker callers: explicit user consent
+     * to write nutrition data must be active at the time of every sync.
      */
     suspend fun performSync(): SyncResult = syncMutex.withLock { performSyncLocked() }
 
     private suspend fun performSyncLocked(): SyncResult {
+        if (!prefs.isSyncEnabled()) return fail("sync_disabled")
+
         val baseUrl = prefs.getBaseUrl() ?: return fail("no_base_url")
         if (!NutritionApiClient.isCanonicalHttpsUrl(baseUrl)) return fail("invalid_url")
 
@@ -32,12 +38,15 @@ class NutritionSyncManager(private val context: Context) {
         if (!writer.isAvailable()) return fail("hc_not_available")
         if (!writer.hasWritePermission()) return fail("missing_write_nutrition_permission")
 
-        // Pairing reset: URL change means a different server/account — invalidate bookmarks
-        val lastSyncUrl = prefs.getLastSyncBaseUrl()
-        if (lastSyncUrl != null && lastSyncUrl != baseUrl) {
+        // Pairing reset: if URL or token has changed since last sync, existing bookmarks
+        // belong to a different server/account combination and must be discarded.
+        // The fingerprint is SHA-256(url \0 token) — one-way, never logged.
+        val fingerprint = computePairingFingerprint(baseUrl, token)
+        val storedFingerprint = prefs.getPairingFingerprint()
+        if (storedFingerprint != null && storedFingerprint != fingerprint) {
             prefs.saveBookmarks(emptyMap())
         }
-        prefs.setLastSyncBaseUrl(baseUrl)
+        prefs.setPairingFingerprint(fingerprint)
 
         val apiClient = NutritionApiClient(baseUrl, token)
         val records = apiClient.fetchQueue().getOrElse { return fail("fetch_error") }
@@ -75,5 +84,13 @@ class NutritionSyncManager(private val context: Context) {
 
     companion object {
         internal val syncMutex = Mutex()
+
+        internal fun computePairingFingerprint(url: String, token: String): String {
+            val md = MessageDigest.getInstance("SHA-256")
+            md.update(url.toByteArray(Charsets.UTF_8))
+            md.update(0.toByte())
+            md.update(token.toByteArray(Charsets.UTF_8))
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
     }
 }
