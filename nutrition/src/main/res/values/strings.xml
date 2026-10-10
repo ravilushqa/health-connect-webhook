@@ -17,5 +17,7 @@
     <string name="sync_success">Sync complete</string>
     <string name="sync_error">Sync error</string>
     <string name="url_must_be_https">URL must start with https://</string>
-    <string name="settings_saved">Settings saved</string>
+    <string name="settings_saved">Save Settings</string>
+    <string name="settings_saved_ok">Settings saved successfully.</string>
+    <string name="settings_save_failed">Save failed — settings unchanged. Check storage and retry.</string>
 </resources>

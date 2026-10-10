@@ -39,7 +39,6 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import com.ravil.healthconnect.nutrition.NutritionApplication
 import com.ravil.healthconnect.nutrition.R
-import com.ravil.healthconnect.nutrition.crypto.TokenStore
 import com.ravil.healthconnect.nutrition.data.SyncResult
 import com.ravil.healthconnect.nutrition.health.HealthConnectWriter
 import com.ravil.healthconnect.nutrition.prefs.NutritionPreferences
@@ -52,19 +51,23 @@ import kotlinx.coroutines.withContext
 fun MainScreen() {
     val context = LocalContext.current
     val prefs = remember { NutritionPreferences(context) }
-    val tokenStore = remember { TokenStore(context) }
     val writer = remember { HealthConnectWriter(context) }
     val scope = rememberCoroutineScope()
 
     var baseUrl by remember { mutableStateOf(prefs.getBaseUrl() ?: "") }
     var tokenInput by remember { mutableStateOf("") }
     var syncEnabled by remember { mutableStateOf(prefs.isSyncEnabled()) }
+    // syncEnabledSaved reflects what is actually persisted — used to gate Pull Now so that
+    // an unsaved toggle change does not enable the button before Settings are saved.
+    var syncEnabledSaved by remember { mutableStateOf(prefs.isSyncEnabled()) }
     var intervalMinutes by remember { mutableStateOf(prefs.getSyncIntervalMinutes().toString()) }
 
     var pendingCount by remember { mutableStateOf(prefs.getPendingCount()) }
     var appliedTotal by remember { mutableStateOf(prefs.getAppliedTotal()) }
     var lastErrors by remember { mutableStateOf(prefs.getLastSyncErrorCount()) }
     var lastMessage by remember { mutableStateOf(prefs.getLastSyncMessage()) }
+    // null = never attempted, true = last save succeeded, false = last save failed
+    var saveResult by remember { mutableStateOf<Boolean?>(null) }
 
     var hasWritePermission by remember { mutableStateOf(false) }
     var isHcAvailable by remember { mutableStateOf(false) }
@@ -132,23 +135,60 @@ fun MainScreen() {
             modifier = Modifier.fillMaxWidth(),
         )
 
-        // Save settings button
+        // Save settings button — creates an immutable settings ticket synchronously on the UI
+        // thread (which also invalidates in-flight syncs and marks a pending update), then
+        // applies the ticket in an IO coroutine under the sync mutex.
         Button(
             onClick = {
+                // Snapshot all compose state fields before launching the coroutine so the
+                // values reflect what the user saw when they tapped Save, not a later
+                // recomposition that might occur while the coroutine is waiting for the mutex.
                 val trimmedUrl = baseUrl.trim()
-                if (trimmedUrl.isNotBlank()) prefs.setBaseUrl(trimmedUrl)
-                if (tokenInput.isNotBlank()) {
-                    tokenStore.setToken(tokenInput)
-                    tokenInput = ""
-                }
+                val tok = if (tokenInput.isNotBlank()) tokenInput else null
                 val interval = intervalMinutes.toIntOrNull() ?: 60
-                prefs.setSyncIntervalMinutes(interval)
-                prefs.setSyncEnabled(syncEnabled)
-                (context.applicationContext as? NutritionApplication)?.rescheduleWorkerIfEnabled()
+                val enabled = syncEnabled  // snapshot before launch
+
+                // Synchronous: increments consentGeneration (kills in-flight syncs), marks
+                // pendingUpdate=true (blocks new syncs), captures the request atomically.
+                // Must happen on the UI thread BEFORE the coroutine is dispatched.
+                val request = NutritionSyncManager.beginSettingsUpdate(
+                    baseUrl = trimmedUrl,
+                    tokenInput = tok,
+                    syncEnabled = enabled,
+                    intervalMinutes = interval,
+                )
+
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) {
+                        NutritionSyncManager(context).applySettings(request)
+                    }
+                    saveResult = ok
+                    if (ok) {
+                        if (tok != null) tokenInput = ""
+                        syncEnabledSaved = prefs.isSyncEnabled()
+                        (context.applicationContext as? NutritionApplication)?.rescheduleWorkerIfEnabled()
+                    }
+                    // On failure: token and reschedule are intentionally left unchanged so the
+                    // user can retry — we must not silently report success for a failed write.
+                }
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.settings_saved))
+        }
+
+        when (saveResult) {
+            true -> Text(
+                text = stringResource(R.string.settings_saved_ok),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            false -> Text(
+                text = stringResource(R.string.settings_save_failed),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            null -> {}
         }
 
         HorizontalDivider()
@@ -172,7 +212,13 @@ fun MainScreen() {
             Text(stringResource(R.string.label_sync_enabled))
             Switch(
                 checked = syncEnabled,
-                onCheckedChange = { syncEnabled = it },
+                onCheckedChange = { newValue ->
+                    syncEnabled = newValue
+                    // Toggling off synchronously invalidates any in-flight sync so it cannot
+                    // complete with the user's intent to disable. An unsaved re-enable does
+                    // not restore consent — only a successful Save lifts the pending block.
+                    if (!newValue) NutritionSyncManager.invalidateConsent()
+                },
             )
         }
 
@@ -237,7 +283,7 @@ fun MainScreen() {
                     isSyncing = false
                 }
             },
-            enabled = !isSyncing && isHcAvailable && hasWritePermission && syncEnabled,
+            enabled = !isSyncing && isHcAvailable && hasWritePermission && syncEnabledSaved && syncEnabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (isSyncing) {
