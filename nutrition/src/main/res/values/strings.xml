@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ravil Nutrition Bridge</string>
+    <string name="label_server_url">Server URL (HTTPS)</string>
+    <string name="label_token">Nutrition Token</string>
+    <string name="label_sync_enabled">Enable Nutrition Sync</string>
+    <string name="label_sync_interval">Sync interval (minutes)</string>
+    <string name="btn_pull_now">Pull Nutrition</string>
+    <string name="btn_grant_permission">Grant WRITE_NUTRITION</string>
+    <string name="status_pending">Pending</string>
+    <string name="status_applied">Applied</string>
+    <string name="status_errors">Errors</string>
+    <string name="permission_rationale">Ravil Nutrition Bridge writes nutrition records to Android Health Connect from your nutrition server. Only WRITE_NUTRITION permission is used.</string>
+    <string name="hc_not_available">Health Connect is not available on this device.</string>
+    <string name="no_token_set">No token configured. Enter server URL and token first.</string>
+    <string name="syncing">Syncing…</string>
+    <string name="sync_success">Sync complete</string>
+    <string name="sync_error">Sync error</string>
+    <string name="url_must_be_https">URL must start with https://</string>
+    <string name="settings_saved">Save Settings</string>
+    <string name="settings_saved_ok">Settings saved successfully.</string>
+    <string name="settings_save_failed">Save failed — settings unchanged. Check storage and retry.</string>
+</resources>
