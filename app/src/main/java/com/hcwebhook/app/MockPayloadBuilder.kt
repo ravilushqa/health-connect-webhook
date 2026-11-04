@@ -3,7 +3,6 @@ package com.hcwebhook.app
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -44,7 +43,7 @@ object MockPayloadBuilder {
                             put("count", step.count)
                             put("start_time", step.startTime.toString())
                             put("end_time", step.endTime.toString())
-                            step.metadata?.let { putMetadata(it) }
+                            step.metadata?.let { putRecordMetadata(it) }
                         })
                     }
                 }
@@ -65,7 +64,7 @@ object MockPayloadBuilder {
                                     })
                                 }
                             }
-                            sleep.metadata?.let { putMetadata(it) }
+                            sleep.metadata?.let { putRecordMetadata(it) }
                         })
                     }
                 }
@@ -76,7 +75,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("bpm", hr.bpm)
                             put("time", hr.time.toString())
-                            hr.metadata?.let { putMetadata(it) }
+                            hr.metadata?.let { putRecordMetadata(it) }
                         })
                     }
                 }
@@ -87,7 +86,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("rmssd_millis", hrv.rmssdMillis)
                             put("time", hrv.time.toString())
-                            hrv.metadata?.let { putMetadata(it) }
+                            hrv.metadata?.let { putRecordMetadata(it) }
                         })
                     }
                 }
@@ -99,7 +98,7 @@ object MockPayloadBuilder {
                             put("meters", it.meters)
                             put("start_time", it.startTime.toString())
                             put("end_time", it.endTime.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -111,7 +110,7 @@ object MockPayloadBuilder {
                             put("calories", it.calories)
                             put("start_time", it.startTime.toString())
                             put("end_time", it.endTime.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -123,7 +122,7 @@ object MockPayloadBuilder {
                             put("calories", it.calories)
                             put("start_time", it.startTime.toString())
                             put("end_time", it.endTime.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -134,7 +133,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("kilograms", it.kilograms)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -145,7 +144,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("meters", it.meters)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -157,7 +156,7 @@ object MockPayloadBuilder {
                             put("systolic", it.systolic)
                             put("diastolic", it.diastolic)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -168,7 +167,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("mmol_per_liter", it.mmolPerLiter)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -179,7 +178,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("percentage", it.percentage)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -190,7 +189,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("celsius", it.celsius)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -203,7 +202,7 @@ object MockPayloadBuilder {
                             put("delta_celsius", skin.deltaCelsius)
                             skin.baselineCelsius?.let { put("baseline_celsius", it) }
                             put("measurement_location", skin.measurementLocation)
-                            skin.metadata?.let { putMetadata(it) }
+                            skin.metadata?.let { putRecordMetadata(it) }
                         })
                     }
                 }
@@ -214,7 +213,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("rate", it.rate)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -225,7 +224,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("bpm", it.bpm)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -244,7 +243,7 @@ object MockPayloadBuilder {
                             it.avgCadenceSpm?.let { c -> put("avg_cadence_spm", c) }
                             it.maxCadenceSpm?.let { c -> put("max_cadence_spm", c) }
                             it.strideLengthMeters?.let { s -> put("stride_length_m", s) }
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -256,7 +255,7 @@ object MockPayloadBuilder {
                             put("liters", it.liters)
                             put("start_time", it.startTime.toString())
                             put("end_time", it.endTime.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -275,7 +274,7 @@ object MockPayloadBuilder {
                             it.name?.let { n -> put("name", n) }
                             put("start_time", it.startTime.toString())
                             put("end_time", it.endTime.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -286,7 +285,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("watts", it.watts)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -297,7 +296,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("percentage", it.percentage)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -308,7 +307,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("kilograms", it.kilograms)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -319,7 +318,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("kilograms", it.kilograms)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -342,7 +341,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("ml_per_kg_per_min", it.mlPerKgPerMin)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -353,7 +352,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("kilograms", it.kilograms)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -364,7 +363,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("flow", it.flow)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -375,7 +374,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("start_time", it.startTime.toString())
                             put("end_time", it.endTime.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -385,7 +384,7 @@ object MockPayloadBuilder {
                     data.intermenstrualBleeding.forEach {
                         add(buildJsonObject {
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -396,7 +395,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("result", it.result)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -407,7 +406,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("appearance", it.appearance)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -418,7 +417,7 @@ object MockPayloadBuilder {
                         add(buildJsonObject {
                             put("protection_used", it.protectionUsed)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -430,7 +429,7 @@ object MockPayloadBuilder {
                             put("celsius", it.celsius)
                             put("measurement_location", it.measurementLocation)
                             put("time", it.time.toString())
-                            it.metadata?.let { meta -> putMetadata(meta) }
+                            it.metadata?.let { meta -> putRecordMetadata(meta) }
                         })
                     }
                 }
@@ -638,19 +637,5 @@ object MockPayloadBuilder {
                 BasalBodyTemperatureData(36.4, 1, t(6, 30), fitnessMeta)
             ) else emptyList()
         )
-    }
-
-    private fun kotlinx.serialization.json.JsonObjectBuilder.putMetadata(meta: RecordMetadata) {
-        putJsonObject("metadata") {
-            put("data_origin", meta.dataOrigin)
-            put("recording_method", meta.recordingMethod)
-            if (meta.deviceManufacturer != null || meta.deviceModel != null || meta.deviceType != null) {
-                putJsonObject("device") {
-                    meta.deviceManufacturer?.let { put("manufacturer", it) }
-                    meta.deviceModel?.let { put("model", it) }
-                    meta.deviceType?.let { put("type", it) }
-                }
-            }
-        }
     }
 }

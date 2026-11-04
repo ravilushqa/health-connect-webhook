@@ -226,6 +226,21 @@ fun Record.toRecordMetadata(
     )
 }
 
+/**
+ * Metadata for a value aggregated from several samples (a downsampled bucket).
+ *
+ * Provenance (origin, recording method, device, zone offsets) is kept, but per-record identity
+ * is dropped: a bucket is not a Health Connect record, so it must not carry the id, client id,
+ * version or modification time of whichever sample happened to be first in it. Consumers then
+ * identify buckets by provenance and time, as they must.
+ */
+fun RecordMetadata.forAggregate(): RecordMetadata = copy(
+    id = "",
+    clientRecordId = null,
+    clientRecordVersion = 0L,
+    lastModifiedTime = null,
+)
+
 data class StepsData(
     val count: Long,
     val startTime: Instant,
@@ -1150,7 +1165,7 @@ class HealthConnectManager(private val context: Context) {
                     time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
                     min = bpms.min(),
                     max = bpms.max(),
-                    metadata = bucketSamples.first().third,
+                    metadata = bucketSamples.first().third.forAggregate(),
                 )
             }
     }
@@ -1186,7 +1201,7 @@ class HealthConnectManager(private val context: Context) {
                     time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
                     min = values.min(),
                     max = values.max(),
-                    metadata = bucketSamples.first().third,
+                    metadata = bucketSamples.first().third.forAggregate(),
                 )
             }
     }
@@ -1529,7 +1544,7 @@ class HealthConnectManager(private val context: Context) {
                     time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
                     min = values.min(),
                     max = values.max(),
-                    metadata = bucketSamples.first().third,
+                    metadata = bucketSamples.first().third.forAggregate(),
                 )
             }
     }
@@ -1583,7 +1598,7 @@ class HealthConnectManager(private val context: Context) {
                     measurementLocation = first.measurementLocation,
                     minDeltaCelsius = deltas.min(),
                     maxDeltaCelsius = deltas.max(),
-                    metadata = first.metadata,
+                    metadata = first.metadata?.forAggregate(),
                 )
             }
     }
@@ -1619,7 +1634,7 @@ class HealthConnectManager(private val context: Context) {
                     time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
                     min = values.min(),
                     max = values.max(),
-                    metadata = bucketSamples.first().third,
+                    metadata = bucketSamples.first().third.forAggregate(),
                 )
             }
     }
