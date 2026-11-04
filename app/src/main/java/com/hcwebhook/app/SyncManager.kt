@@ -15,8 +15,17 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.time.Instant
 
-/** Emit a record's Health Connect provenance as a nested "metadata" object. */
-private fun JsonObjectBuilder.putRecordMetadata(meta: RecordMetadata) {
+/**
+ * Emit a record's Health Connect provenance and identity as a nested "metadata" object.
+ *
+ * Identity fields mirror the protobuf `RecordMetadata` and are emitted only when present:
+ * - `id`: the Health Connect record id (absent for downsampled buckets, see [forAggregate]).
+ * - `client_record_id` + `client_record_version`: the writing app's own id and version.
+ * - `last_modified_time`: ISO-8601 UTC.
+ *
+ * With them a receiver can deduplicate by id instead of by timestamps and detect edits.
+ */
+internal fun JsonObjectBuilder.putRecordMetadata(meta: RecordMetadata) {
     putJsonObject("metadata") {
         put("data_origin", meta.dataOrigin)
         put("recording_method", meta.recordingMethod)
@@ -27,6 +36,12 @@ private fun JsonObjectBuilder.putRecordMetadata(meta: RecordMetadata) {
                 meta.deviceType?.let { put("type", it) }
             }
         }
+        if (meta.id.isNotEmpty()) put("id", meta.id)
+        meta.clientRecordId?.let {
+            put("client_record_id", it)
+            put("client_record_version", meta.clientRecordVersion)
+        }
+        meta.lastModifiedTime?.let { put("last_modified_time", it.toString()) }
     }
 }
 
