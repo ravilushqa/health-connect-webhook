@@ -93,7 +93,7 @@ Notes:
 - Requests: HTTPS only (cleartext disabled), redirects not followed (a redirect would
   otherwise carry the token), tokens only in their headers, never in URLs.
 - Logs: record type names only; no times, values, tokens or server bodies.
-- Permissions: Health Connect read for the 32 types HC Webhook reads, steps cadence,
+- Permissions: Health Connect read for the 32 types HC Webhook reads (steps also covers cadence),
   background reads, nutrition write; `INTERNET`, `ACCESS_NETWORK_STATE`. No history
   permission (reads never go back more than 48 hours).
 

@@ -46,6 +46,7 @@ val HealthDataType.recordClass: KClass<out Record>
 object HcPermissions {
     const val READ_IN_BACKGROUND = HealthConnectReader.BACKGROUND_PERMISSION_STR
     val WRITE_NUTRITION: String = HealthPermission.getWritePermission(NutritionRecord::class)
+    // Cadence (read for exercise sessions) is covered by READ_STEPS in androidx.
     private val READ_STEPS_CADENCE: String = HealthPermission.getReadPermission(StepsCadenceRecord::class)
 
     fun read(type: HealthDataType): String = HealthPermission.getReadPermission(type.recordClass)
