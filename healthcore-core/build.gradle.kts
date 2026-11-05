@@ -82,3 +82,10 @@ tasks.test {
     // src/test/resources/contract/*.json from the synthetic data; review the diff.
     System.getProperty("healthcore.updateFixtures")?.let { systemProperty("healthcore.updateFixtures", it) }
 }
+
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
