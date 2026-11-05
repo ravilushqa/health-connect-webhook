@@ -8,6 +8,7 @@ import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Mass
 import com.ravil.healthcore.core.nutrition.data.NutritionQueueRecord
+import com.ravil.healthcore.core.nutrition.health.HcWriterPort
 import com.ravil.healthcore.core.nutrition.validation.RecordValidator
 import java.time.ZoneOffset
 
