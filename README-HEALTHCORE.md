@@ -19,6 +19,24 @@ carries its Health Connect identity in `metadata` (`id`, `client_record_id`,
 `client_record_version`, `last_modified_time`; buckets carry none). health-core then
 deduplicates by id instead of by timestamps (`journal.Options.Reconcile`, on by default).
 
+## Day totals
+
+Raw step, distance and active-calorie records of one source can overlap: Android's
+built-in step counter (`com.android.healthconnect.phone.…`) writes partly overlapping
+intervals. health-core then reports "Overlapping step intervals" and no total for that
+source, since it cannot tell how the overlap splits. Every run therefore also sends
+Health Connect's own aggregate for each of the last three local days (the number the
+phone shows, with overlaps and duplicates across apps resolved) as one record per day:
+
+- interval: local midnight to the next midnight, so the record of a day is the same
+  every time and health-core replaces its value instead of adding an interval;
+- metadata: `data_origin` `health-connect.aggregate`, `recording_method` `aggregate`,
+  the phone as device, no record id; a source of its own, never mixed with raw records.
+
+In `health_day` this source has a `total` for steps (distance and active calories are
+in `health_energy`). The raw sources stay as they are, warnings included. Cursors follow
+the raw records only.
+
 ## Modules
 
 ```
