@@ -1,6 +1,7 @@
 package com.ravil.healthcore
 
 import android.app.Application
+import com.ravil.healthcore.data.AppPreferences
 import com.ravil.healthcore.sync.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,7 @@ class HealthCoreApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppPreferences(this).migrate()
         SyncScheduler.apply(this)
     }
 }

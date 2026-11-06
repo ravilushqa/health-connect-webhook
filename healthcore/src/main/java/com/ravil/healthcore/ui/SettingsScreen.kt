@@ -135,7 +135,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
         Section("Data resolution") {
             Text(
-                "Use the same values as in HC Webhook, or health-core will store the same period in two shapes.",
+                "Steps, distance, calories, hydration and nutrition are always sent as raw Health Connect records, so health-core can deduplicate them by id.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

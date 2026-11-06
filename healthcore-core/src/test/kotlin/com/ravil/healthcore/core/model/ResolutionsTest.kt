@@ -6,27 +6,37 @@ import org.junit.Test
 
 class ResolutionsTest {
     @Test
-    fun `defaults are HC Webhook's and are always offered`() {
-        assertEquals(RESOLUTION_DAILY, HealthDataType.STEPS.defaultResolutionMinutes)
-        assertEquals(RESOLUTION_FULL, HealthDataType.NUTRITION.defaultResolutionMinutes)
-        assertEquals(1, HealthDataType.HEART_RATE.defaultResolutionMinutes)
-        assertEquals(RESOLUTION_FULL, HealthDataType.SLEEP.defaultResolutionMinutes)
-        for (t in Resolutions.configurable) {
-            assertTrue(t.name, Resolutions.options(t).any { it.minutes == t.defaultResolutionMinutes })
+    fun `interval types are always raw, whatever was stored`() {
+        for (t in listOf(HealthDataType.STEPS, HealthDataType.DISTANCE, HealthDataType.ACTIVE_CALORIES,
+            HealthDataType.TOTAL_CALORIES, HealthDataType.HYDRATION, HealthDataType.NUTRITION)) {
+            assertEquals(t.name, RESOLUTION_FULL, Resolutions.default(t))
+            assertEquals(t.name, RESOLUTION_FULL, Resolutions.effective(t, null))
+            assertEquals("a stored daily value is dropped", RESOLUTION_FULL, Resolutions.effective(t, RESOLUTION_DAILY))
+            assertEquals(t.name, RESOLUTION_FULL, Resolutions.effective(t, 15))
         }
     }
 
     @Test
-    fun `effective falls back to the default`() {
-        assertEquals(RESOLUTION_DAILY, Resolutions.effective(HealthDataType.STEPS, null))
-        assertEquals(RESOLUTION_FULL, Resolutions.effective(HealthDataType.STEPS, RESOLUTION_FULL))
-        assertEquals(RESOLUTION_DAILY, Resolutions.effective(HealthDataType.STEPS, 7))
-        assertEquals(RESOLUTION_FULL, Resolutions.effective(HealthDataType.WEIGHT, 15))
+    fun `sample series and sleep keep HC Webhook's defaults`() {
+        assertEquals(1, Resolutions.effective(HealthDataType.HEART_RATE, null))
+        assertEquals(5, Resolutions.effective(HealthDataType.HEART_RATE, 5))
+        assertEquals(RESOLUTION_FULL, Resolutions.effective(HealthDataType.SLEEP, null))
+        assertEquals(SLEEP_SUMMARY, Resolutions.effective(HealthDataType.SLEEP, SLEEP_SUMMARY))
+        for (t in Resolutions.withResolution) {
+            assertTrue(t.name, Resolutions.options(t).any { it.minutes == Resolutions.default(t) })
+        }
     }
 
     @Test
-    fun `configurable types`() {
-        assertEquals(12, Resolutions.configurable.size)
+    fun `settings show only types with a choice, the reader gets all of them`() {
+        assertEquals(12, Resolutions.withResolution.size)
+        assertEquals(
+            setOf(
+                HealthDataType.HEART_RATE, HealthDataType.HEART_RATE_VARIABILITY, HealthDataType.OXYGEN_SATURATION,
+                HealthDataType.RESPIRATORY_RATE, HealthDataType.SKIN_TEMPERATURE, HealthDataType.SLEEP,
+            ),
+            Resolutions.configurable.toSet(),
+        )
         assertTrue(Resolutions.options(HealthDataType.WEIGHT).isEmpty())
     }
 

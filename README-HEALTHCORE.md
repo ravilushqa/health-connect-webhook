@@ -68,11 +68,12 @@ SHA-256 digest recorded when the key was made and fails on a mismatch:
    the token. *Replace* swaps it.
 4. **Nutrition token**: the same for `X-Nutrition-Token` (the one Nutrition Bridge uses).
 5. **Sync**: turn on *Send health data* and *Write meals*; set the interval (≥ 15 min).
-6. **Data resolution**: set the same values as in HC Webhook (*Configuration → data
-   types*). The defaults are HC Webhook's defaults (steps, distance, active calories:
-   daily; heart rate, HRV, SpO₂, respiratory rate, skin temperature: 1 min; sleep: with
-   stages; the rest raw). If they differ, health-core stores the same period in two
-   shapes (e.g. daily step totals and 15-minute buckets) and day totals double.
+6. **Data resolution**: only heart-rate-like series (1-minute buckets by default) and sleep
+   (with stages) can be changed. Steps, distance, active and total calories, hydration and
+   nutrition are always sent raw: one Health Connect record each, with its id. HC Webhook's
+   default *daily* buckets have no id and today's bucket ends "now", so every sync stored
+   another, longer interval and health-core could not total the day ("Overlapping step
+   intervals", total null). Raw records are deduplicated by id and add up per source.
 7. **Save**, back to the main screen, **Grant permissions**: allow all types, *Access data
    in the background* and *Nutrition (write)*. Background access is what lets the
    periodic sync read without the app open.
@@ -100,6 +101,10 @@ Notes:
   Health Connect by hand if it happens.
 - Changing the server URL resets the ingest cursors, so the next run re-sends the last 48
   hours to the new server.
+- Stop HC Webhook's health-core webhook once Health Core runs: its daily step buckets keep
+  adding overlapping intervals to the `{"_no_metadata":true}` source. Rows already stored
+  that way stay; days covered by Health Core's raw records have a total under the
+  records' own source (the writing app and device).
 
 ## Privacy
 

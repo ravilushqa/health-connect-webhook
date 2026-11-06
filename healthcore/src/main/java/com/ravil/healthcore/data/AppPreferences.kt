@@ -47,6 +47,21 @@ class AppPreferences(context: Context) {
         return e.commit()
     }
 
+    /**
+     * One-off migrations of stored state, run at start-up.
+     * v2: interval types switched from daily buckets to raw records; their cursors are reset
+     * so the next run sends the raw records of the whole 48-hour window, not only new ones.
+     */
+    fun migrate() {
+        val v = prefs.getInt(KEY_STATE_VERSION, 1)
+        if (v < 2) {
+            val e = prefs.edit()
+            Resolutions.withResolution.filter { Resolutions.default(it) == 0 && it.defaultResolutionMinutes != 0 }
+                .forEach { e.remove(KEY_CURSOR + it.name) }
+            e.putInt(KEY_STATE_VERSION, 2).commit()
+        }
+    }
+
     fun resetCursors(): Boolean {
         val e = prefs.edit()
         HealthDataType.entries.forEach { e.remove(KEY_CURSOR + it.name) }
@@ -58,7 +73,8 @@ class AppPreferences(context: Context) {
     fun resolution(type: HealthDataType): Int =
         Resolutions.effective(type, prefs.getInt(KEY_RESOLUTION + type.name, Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE })
 
-    fun resolutions(): Map<HealthDataType, Int> = Resolutions.configurable.associateWith(::resolution)
+    /** Every type that has a resolution, so the reader never falls back to HC Webhook's defaults. */
+    fun resolutions(): Map<HealthDataType, Int> = Resolutions.withResolution.associateWith(::resolution)
 
     fun setResolutions(values: Map<HealthDataType, Int>) {
         val e = prefs.edit()
@@ -100,6 +116,7 @@ class AppPreferences(context: Context) {
         private const val KEY_INTERVAL = "interval_min"
         private const val KEY_CURSOR = "cursor_"
         private const val KEY_RESOLUTION = "resolution_"
+        private const val KEY_STATE_VERSION = "state_version"
         const val DEFAULT_INTERVAL_MINUTES = 60
         const val MIN_INTERVAL_MINUTES = 15
     }
