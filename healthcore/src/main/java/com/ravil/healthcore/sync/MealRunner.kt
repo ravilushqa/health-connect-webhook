@@ -34,6 +34,7 @@ class MealRunner(private val context: Context, private val prefs: AppPreferences
             is SyncResult.Error -> RunResult(RunStatus(now, result.reason, ok = false), retryable = result.reason !in FINAL)
         }
         prefs.setLastRun(AppPreferences.Job.MEALS, run.status)
+        if (run.status.records > 0) prefs.setLastMealWrittenAt(now)
         return run
     }
 

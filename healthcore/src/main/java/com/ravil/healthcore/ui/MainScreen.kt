@@ -51,6 +51,7 @@ import com.ravil.healthcore.core.status.StatusText
 import com.ravil.healthcore.data.AppPreferences
 import com.ravil.healthcore.data.Settings
 import com.ravil.healthcore.hc.HcPermissions
+import com.ravil.healthcore.nutrition.NutritionPreferences
 import com.ravil.healthcore.sync.MealRunner
 import com.ravil.healthcore.sync.SyncJobs
 import kotlinx.coroutines.async
@@ -71,6 +72,8 @@ fun MainScreen(onOpenSettings: () -> Unit) {
     var granted by remember { mutableStateOf<Set<String>>(emptySet()) }
     var lastIngest by remember { mutableStateOf(prefs.lastRun(AppPreferences.Job.INGEST)) }
     var lastMeals by remember { mutableStateOf(prefs.lastRun(AppPreferences.Job.MEALS)) }
+    var lastMealWrittenAt by remember { mutableStateOf(prefs.lastMealWrittenAt()) }
+    var mealsWrittenTotal by remember { mutableIntStateOf(NutritionPreferences(app).getAppliedTotal()) }
     var ingestOn by remember { mutableStateOf(prefs.ingestEnabled) }
     var mealsOn by remember { mutableStateOf(MealRunner(app).isEnabled()) }
     var configured by remember { mutableStateOf(settings.hasIngestToken() || settings.hasNutritionToken()) }
@@ -98,6 +101,8 @@ fun MainScreen(onOpenSettings: () -> Unit) {
         } else emptySet()
         lastIngest = prefs.lastRun(AppPreferences.Job.INGEST)
         lastMeals = prefs.lastRun(AppPreferences.Job.MEALS)
+        lastMealWrittenAt = prefs.lastMealWrittenAt()
+        mealsWrittenTotal = NutritionPreferences(app).getAppliedTotal()
         ingestOn = prefs.ingestEnabled
         mealsOn = MealRunner(app).isEnabled()
         configured = settings.hasIngestToken() || settings.hasNutritionToken()
@@ -149,9 +154,13 @@ fun MainScreen(onOpenSettings: () -> Unit) {
             enabled = mealsOn,
             status = lastMeals,
             now = now,
+            rows = listOf(
+                "Last meal written" to (lastMealWrittenAt?.let { StatusText.ago(it, now) } ?: "None yet"),
+                "Written in total" to mealsWrittenTotal.toString(),
+            ),
             detail = { s ->
                 listOfNotNull(
-                    "${s.records} written",
+                    if (s.records > 0) "This run wrote ${s.records}" else "Queue was empty on this run",
                     if (s.errors > 0) "${s.errors} errors" else null,
                 ).joinToString(" · ")
             },
@@ -245,7 +254,14 @@ private fun HealthConnectCard(sdkStatus: Int, granted: Set<String>, onGrant: () 
 }
 
 @Composable
-private fun RunCard(title: String, enabled: Boolean, status: RunStatus?, now: Instant, detail: (RunStatus) -> String?) {
+private fun RunCard(
+    title: String,
+    enabled: Boolean,
+    status: RunStatus?,
+    now: Instant,
+    rows: List<Pair<String, String>> = emptyList(),
+    detail: (RunStatus) -> String?,
+) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -255,6 +271,7 @@ private fun RunCard(title: String, enabled: Boolean, status: RunStatus?, now: In
                 else -> {
                     StatusLine("Last run", StatusText.ago(status.at, now), MaterialTheme.colorScheme.onSurface)
                     StatusLine("Result", StatusText.label(status.code), if (status.ok) OkColor else BadColor)
+                    rows.forEach { (label, value) -> StatusLine(label, value, MaterialTheme.colorScheme.onSurface) }
                     detail(status)?.takeIf { it.isNotEmpty() }?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

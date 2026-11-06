@@ -106,6 +106,14 @@ class AppPreferences(context: Context) {
             .apply()
     }
 
+    /** When a meal was last written to Health Connect (any run), for the main screen. */
+    fun lastMealWrittenAt(): Instant? =
+        prefs.getLong(KEY_LAST_MEAL_WRITTEN, 0L).takeIf { it > 0 }?.let(Instant::ofEpochMilli)
+
+    fun setLastMealWrittenAt(at: Instant) {
+        prefs.edit().putLong(KEY_LAST_MEAL_WRITTEN, at.toEpochMilli()).apply()
+    }
+
     enum class Token(val key: String) { INGEST("ingest_token_updated_at"), NUTRITION("nutrition_token_updated_at") }
 
     enum class Job(val key: String) { INGEST("run_ingest"), MEALS("run_meals") }
@@ -118,6 +126,7 @@ class AppPreferences(context: Context) {
         private const val KEY_CURSOR = "cursor_"
         private const val KEY_RESOLUTION = "resolution_"
         private const val KEY_STATE_VERSION = "state_version"
+        private const val KEY_LAST_MEAL_WRITTEN = "last_meal_written_at"
         const val DEFAULT_INTERVAL_MINUTES = 60
         const val MIN_INTERVAL_MINUTES = 15
     }
