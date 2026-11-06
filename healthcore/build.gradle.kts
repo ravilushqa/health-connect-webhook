@@ -4,6 +4,11 @@ plugins {
     alias(libs.plugins.kotlinx.serialization)
 }
 
+// Release signing: CI writes the keystore from repository secrets and passes its path and
+// password in the environment (see .github/workflows/healthcore.yml). Without them the
+// release build is unsigned and only the debug APK is installable.
+val releaseKeystore: String? = System.getenv("HEALTHCORE_KEYSTORE")?.takeIf { file(it).exists() }
+
 android {
     namespace = "com.ravil.healthcore"
     compileSdk = 36
@@ -12,13 +17,29 @@ android {
         applicationId = "com.ravil.healthcore"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI passes its run number so every published build upgrades the previous one.
+        val build = System.getenv("HEALTHCORE_BUILD_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "0.1.$build"
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storeType = "pkcs12"
+                storePassword = System.getenv("HEALTHCORE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("HEALTHCORE_KEY_ALIAS") ?: "healthcore"
+                // PKCS12 has one password for the store and the key.
+                keyPassword = System.getenv("HEALTHCORE_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

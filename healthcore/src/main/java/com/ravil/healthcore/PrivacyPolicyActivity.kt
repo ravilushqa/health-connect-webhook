@@ -1,11 +1,15 @@
 package com.ravil.healthcore
 
 import android.os.Bundle
+import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,9 +29,15 @@ import com.ravil.healthcore.ui.HealthCoreTheme
 class PrivacyPolicyActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 15+ draws apps edge to edge; the app is dark only, so the bars get light icons
+        // and the content is padded clear of the status bar, cutout, navigation bar and keyboard.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         setContent {
             HealthCoreTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = MaterialTheme.colorScheme.background) {
                     Column(
                         Modifier
                             .verticalScroll(rememberScrollState())

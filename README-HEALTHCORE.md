@@ -37,11 +37,25 @@ and the UI. `:app` and `:nutrition` are untouched.
 
 ## Install
 
-1. Get the APK: the **Health Core** workflow uploads `healthcore-debug` on every push
-   (Actions → run → Artifacts), or build it: `./gradlew :healthcore:assembleDebug`.
-2. `adb install -r healthcore/build/outputs/apk/debug/healthcore-debug.apk`, or open the
-   APK on the phone. It installs next to HC Webhook and Nutrition Bridge (different
-   application id), nothing has to be removed first.
+**From the pre-release (recommended).** Every push that touches the app publishes a signed
+APK as the rolling pre-release `healthcore-nightly`:
+`https://github.com/ravilushqa/health-connect-webhook/releases/download/healthcore-nightly/health-core.apk`.
+Open it on the phone and install. Later builds install over it: they are signed with the
+same key and carry a higher version (the workflow run number), so tokens and settings stay.
+
+**From a workflow artifact.** `healthcore-debug` (Actions → run → Artifacts) is a zip with a
+debug APK signed with that runner's throwaway key. It cannot be updated in place, so use it
+only to try a branch. A debug install and the release cannot be installed over each other:
+uninstall one before installing the other.
+
+### Signing key (once)
+
+The release is signed with a PKCS12 keystore (alias `healthcore`) kept in two repository
+secrets: `HEALTHCORE_KEYSTORE_B64` (the file, base64) and `HEALTHCORE_KEYSTORE_PASSWORD`.
+Without them the workflow skips the release. Keep a backup of the keystore outside GitHub:
+if it is lost, the next key's builds cannot be installed over the old ones (uninstall,
+then set the app up again). The workflow log prints the certificate's SHA-256 digest
+(`apksigner verify --print-certs`), which must match the one recorded when the key was made.
 
 ## Set up
 

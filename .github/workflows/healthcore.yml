@@ -1,6 +1,7 @@
 name: Health Core
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, 'feat/healthcore-**' ]
     paths:
@@ -22,9 +23,15 @@ on:
       - '*.gradle.kts'
       - '.github/workflows/healthcore.yml'
 
+permissions:
+  contents: write   # the pre-release; nothing else is written
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    concurrency:
+      group: healthcore-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -62,6 +69,41 @@ jobs:
         with:
           name: healthcore-debug
           path: healthcore/build/outputs/apk/debug/*.apk
+
+      # ── signed release + rolling pre-release (pushes and manual runs; needs the signing secrets) ──
+      - name: Check for the signing key
+        id: key
+        env:
+          KEYSTORE_B64: ${{ secrets.HEALTHCORE_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "No HEALTHCORE_KEYSTORE_B64 secret: skipping the release."; fi
+
+      - name: Build signed release APK
+        if: steps.key.outputs.present == 'true' && github.event_name != 'pull_request'
+        env:
+          KEYSTORE_B64: ${{ secrets.HEALTHCORE_KEYSTORE_B64 }}
+          HEALTHCORE_KEYSTORE_PASSWORD: ${{ secrets.HEALTHCORE_KEYSTORE_PASSWORD }}
+          HEALTHCORE_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/healthcore.p12"
+          HEALTHCORE_KEYSTORE="$RUNNER_TEMP/healthcore.p12" ./gradlew :healthcore:assembleRelease
+          rm -f "$RUNNER_TEMP/healthcore.p12"
+          cp healthcore/build/outputs/apk/release/healthcore-release.apk "$RUNNER_TEMP/health-core.apk"
+          # Public certificate digest: compare with the one printed when the key was made.
+          "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify --print-certs "$RUNNER_TEMP/health-core.apk" | grep -i "SHA-256"
+
+      - name: Publish pre-release healthcore-nightly
+        if: steps.key.outputs.present == 'true' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD: ${{ github.run_number }}
+        run: |
+          gh release delete healthcore-nightly --cleanup-tag --yes -R "$GITHUB_REPOSITORY" || true
+          gh release create healthcore-nightly "$RUNNER_TEMP/health-core.apk" -R "$GITHUB_REPOSITORY" \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Health Core 0.1.$BUILD" \
+            --notes "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}. Installs over earlier healthcore-nightly builds (same signing key, higher version). Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/healthcore-nightly/health-core.apk"
 
       - name: Upload reports on failure
         if: failure()
