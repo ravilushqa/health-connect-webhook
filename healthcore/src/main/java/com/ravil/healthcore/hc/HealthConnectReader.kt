@@ -1,0 +1,1547 @@
+package com.ravil.healthcore.hc
+
+import android.content.Context
+import android.util.Log
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.permission.HealthPermission
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import androidx.health.connect.client.records.*
+import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
+import kotlin.math.roundToLong
+import com.ravil.healthcore.core.model.*
+
+// Ported from :app's HealthConnectManager (reading code only; the dashboard and the
+// HealthDataType enum with its UI resources are left out, the model lives in :healthcore-core).
+// Logs name record types only, never times or values.
+
+/**
+ * Health Connect's `InstantRecord` / `IntervalRecord` interfaces are `internal`, so the caller
+ * passes the zone offsets from the concrete record: [zoneOffset] for instant records,
+ * [startZoneOffset] / [endZoneOffset] for interval records.
+ */
+fun Record.toRecordMetadata(
+    zoneOffset: ZoneOffset? = null,
+    startZoneOffset: ZoneOffset? = null,
+    endZoneOffset: ZoneOffset? = null,
+): RecordMetadata {
+    val m = metadata
+    return RecordMetadata(
+        dataOrigin = m.dataOrigin.packageName,
+        recordingMethod = when (m.recordingMethod) {
+            Metadata.RECORDING_METHOD_ACTIVELY_RECORDED -> "actively_recorded"
+            Metadata.RECORDING_METHOD_AUTOMATICALLY_RECORDED -> "automatically_recorded"
+            Metadata.RECORDING_METHOD_MANUAL_ENTRY -> "manual_entry"
+            else -> "unknown"
+        },
+        deviceManufacturer = m.device?.manufacturer,
+        deviceModel = m.device?.model,
+        deviceType = m.device?.type,
+        id = m.id,
+        clientRecordId = m.clientRecordId,
+        clientRecordVersion = m.clientRecordVersion,
+        lastModifiedTime = m.lastModifiedTime,
+        zoneOffsetSeconds = zoneOffset?.totalSeconds,
+        startZoneOffsetSeconds = startZoneOffset?.totalSeconds,
+        endZoneOffsetSeconds = endZoneOffset?.totalSeconds,
+    )
+}
+
+class HealthConnectReader(private val context: Context) {
+
+    private val healthConnectClient by lazy {
+        try {
+            HealthConnectClient.getOrCreate(context)
+        } catch (e: Exception) {
+            throw IllegalStateException("Health Connect is not available on this device: ${e.message}", e)
+        }
+    }
+
+    suspend fun readHealthData(
+        enabledTypes: Set<HealthDataType>,
+        lastSyncTimestamps: Map<HealthDataType, Instant?>,
+        timeRangeDays: Int? = null,
+        start: Instant? = null,
+        end: Instant? = null,
+        dataTypeResolutions: Map<HealthDataType, Int> = emptyMap(),
+    ): Result<HealthData> {
+        return try {
+            val endTime = end ?: Instant.now()
+            val startTime = when {
+                start != null -> start
+                timeRangeDays != null -> endTime.minus(timeRangeDays.toLong(), ChronoUnit.DAYS)
+                else -> endTime.minus(LOOKBACK_HOURS, ChronoUnit.HOURS)
+            }
+
+            // Health Connect / androidx require a strictly increasing range.
+            if (!startTime.isBefore(endTime)) {
+                return Result.failure(IllegalArgumentException("start must be before end"))
+            }
+
+            fun resolution(type: HealthDataType): Int =
+                dataTypeResolutions[type] ?: type.defaultResolutionMinutes
+
+            // Wrap each per-type read so a failure identifies which data type caused it.
+            // Health Connect (and its underlying platform) throws generic, unattributed
+            // IllegalArgumentExceptions (e.g. a time-range validation error) that are
+            // otherwise indistinguishable across 30 record types once they reach the UI.
+            suspend fun <T> attributed(type: HealthDataType, block: suspend () -> List<T>): List<T> =
+                try {
+                    block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw Exception("${type.name}: ${e.message}", e)
+                }
+
+            val stepsData = if (HealthDataType.STEPS in enabledTypes)
+                attributed(HealthDataType.STEPS) { readStepsData(startTime, endTime, lastSyncTimestamps[HealthDataType.STEPS], resolution(HealthDataType.STEPS)) } else emptyList()
+            val sleepData = if (HealthDataType.SLEEP in enabledTypes)
+                attributed(HealthDataType.SLEEP) { readSleepData(startTime, endTime, lastSyncTimestamps[HealthDataType.SLEEP], resolution(HealthDataType.SLEEP)) } else emptyList()
+            val heartRateData = if (HealthDataType.HEART_RATE in enabledTypes)
+                attributed(HealthDataType.HEART_RATE) { readHeartRateData(startTime, endTime, lastSyncTimestamps[HealthDataType.HEART_RATE], resolution(HealthDataType.HEART_RATE)) } else emptyList()
+            val heartRateVariabilityData = if (HealthDataType.HEART_RATE_VARIABILITY in enabledTypes)
+                attributed(HealthDataType.HEART_RATE_VARIABILITY) { readHeartRateVariabilityData(startTime, endTime, lastSyncTimestamps[HealthDataType.HEART_RATE_VARIABILITY], resolution(HealthDataType.HEART_RATE_VARIABILITY)) } else emptyList()
+            val distanceData = if (HealthDataType.DISTANCE in enabledTypes)
+                attributed(HealthDataType.DISTANCE) { readDistanceData(startTime, endTime, lastSyncTimestamps[HealthDataType.DISTANCE], resolution(HealthDataType.DISTANCE)) } else emptyList()
+            val activeCaloriesData = if (HealthDataType.ACTIVE_CALORIES in enabledTypes)
+                attributed(HealthDataType.ACTIVE_CALORIES) { readActiveCaloriesData(startTime, endTime, lastSyncTimestamps[HealthDataType.ACTIVE_CALORIES], resolution(HealthDataType.ACTIVE_CALORIES)) } else emptyList()
+            val totalCaloriesData = if (HealthDataType.TOTAL_CALORIES in enabledTypes)
+                attributed(HealthDataType.TOTAL_CALORIES) { readTotalCaloriesData(startTime, endTime, lastSyncTimestamps[HealthDataType.TOTAL_CALORIES], resolution(HealthDataType.TOTAL_CALORIES)) } else emptyList()
+            val weightData = if (HealthDataType.WEIGHT in enabledTypes)
+                attributed(HealthDataType.WEIGHT) { readWeightData(startTime, endTime, lastSyncTimestamps[HealthDataType.WEIGHT]) } else emptyList()
+            val heightData = if (HealthDataType.HEIGHT in enabledTypes)
+                attributed(HealthDataType.HEIGHT) { readHeightData(startTime, endTime, lastSyncTimestamps[HealthDataType.HEIGHT]) } else emptyList()
+            val bloodPressureData = if (HealthDataType.BLOOD_PRESSURE in enabledTypes)
+                attributed(HealthDataType.BLOOD_PRESSURE) { readBloodPressureData(startTime, endTime, lastSyncTimestamps[HealthDataType.BLOOD_PRESSURE]) } else emptyList()
+            val bloodGlucoseData = if (HealthDataType.BLOOD_GLUCOSE in enabledTypes)
+                attributed(HealthDataType.BLOOD_GLUCOSE) { readBloodGlucoseData(startTime, endTime, lastSyncTimestamps[HealthDataType.BLOOD_GLUCOSE]) } else emptyList()
+            val oxygenSaturationData = if (HealthDataType.OXYGEN_SATURATION in enabledTypes)
+                attributed(HealthDataType.OXYGEN_SATURATION) { readOxygenSaturationData(startTime, endTime, lastSyncTimestamps[HealthDataType.OXYGEN_SATURATION], resolution(HealthDataType.OXYGEN_SATURATION)) } else emptyList()
+            val bodyTemperatureData = if (HealthDataType.BODY_TEMPERATURE in enabledTypes)
+                attributed(HealthDataType.BODY_TEMPERATURE) { readBodyTemperatureData(startTime, endTime, lastSyncTimestamps[HealthDataType.BODY_TEMPERATURE]) } else emptyList()
+            val skinTemperatureData = if (HealthDataType.SKIN_TEMPERATURE in enabledTypes)
+                attributed(HealthDataType.SKIN_TEMPERATURE) { readSkinTemperatureData(startTime, endTime, lastSyncTimestamps[HealthDataType.SKIN_TEMPERATURE], resolution(HealthDataType.SKIN_TEMPERATURE)) } else emptyList()
+            val respiratoryRateData = if (HealthDataType.RESPIRATORY_RATE in enabledTypes)
+                attributed(HealthDataType.RESPIRATORY_RATE) { readRespiratoryRateData(startTime, endTime, lastSyncTimestamps[HealthDataType.RESPIRATORY_RATE], resolution(HealthDataType.RESPIRATORY_RATE)) } else emptyList()
+            val restingHeartRateData = if (HealthDataType.RESTING_HEART_RATE in enabledTypes)
+                attributed(HealthDataType.RESTING_HEART_RATE) { readRestingHeartRateData(startTime, endTime, lastSyncTimestamps[HealthDataType.RESTING_HEART_RATE]) } else emptyList()
+            val exerciseData = if (HealthDataType.EXERCISE in enabledTypes)
+                attributed(HealthDataType.EXERCISE) {
+                    readExerciseData(
+                        startTime,
+                        endTime,
+                        lastSyncTimestamps[HealthDataType.EXERCISE],
+                        HealthDataType.DISTANCE in enabledTypes,
+                        HealthDataType.STEPS in enabledTypes
+                    )
+                } else emptyList()
+            val hydrationData = if (HealthDataType.HYDRATION in enabledTypes)
+                attributed(HealthDataType.HYDRATION) { readHydrationData(startTime, endTime, lastSyncTimestamps[HealthDataType.HYDRATION], resolution(HealthDataType.HYDRATION)) } else emptyList()
+            val nutritionData = if (HealthDataType.NUTRITION in enabledTypes)
+                attributed(HealthDataType.NUTRITION) { readNutritionData(startTime, endTime, lastSyncTimestamps[HealthDataType.NUTRITION], resolution(HealthDataType.NUTRITION)) } else emptyList()
+            val basalMetabolicRateData = if (HealthDataType.BASAL_METABOLIC_RATE in enabledTypes)
+                attributed(HealthDataType.BASAL_METABOLIC_RATE) { readBasalMetabolicRateData(startTime, endTime, lastSyncTimestamps[HealthDataType.BASAL_METABOLIC_RATE]) } else emptyList()
+            val bodyFatData = if (HealthDataType.BODY_FAT in enabledTypes)
+                attributed(HealthDataType.BODY_FAT) { readBodyFatData(startTime, endTime, lastSyncTimestamps[HealthDataType.BODY_FAT]) } else emptyList()
+            val leanBodyMassData = if (HealthDataType.LEAN_BODY_MASS in enabledTypes)
+                attributed(HealthDataType.LEAN_BODY_MASS) { readLeanBodyMassData(startTime, endTime, lastSyncTimestamps[HealthDataType.LEAN_BODY_MASS]) } else emptyList()
+            val bodyWaterMassData = if (HealthDataType.BODY_WATER_MASS in enabledTypes)
+                attributed(HealthDataType.BODY_WATER_MASS) { readBodyWaterMassData(startTime, endTime, lastSyncTimestamps[HealthDataType.BODY_WATER_MASS]) } else emptyList()
+            val vo2MaxData = if (HealthDataType.VO2_MAX in enabledTypes)
+                attributed(HealthDataType.VO2_MAX) { readVo2MaxData(startTime, endTime, lastSyncTimestamps[HealthDataType.VO2_MAX]) } else emptyList()
+            val boneMassData = if (HealthDataType.BONE_MASS in enabledTypes)
+                attributed(HealthDataType.BONE_MASS) { readBoneMassData(startTime, endTime, lastSyncTimestamps[HealthDataType.BONE_MASS]) } else emptyList()
+            val menstruationFlowData = if (HealthDataType.MENSTRUATION_FLOW in enabledTypes)
+                attributed(HealthDataType.MENSTRUATION_FLOW) { readMenstruationFlowData(startTime, endTime, lastSyncTimestamps[HealthDataType.MENSTRUATION_FLOW]) } else emptyList()
+            val menstruationPeriodData = if (HealthDataType.MENSTRUATION_PERIOD in enabledTypes)
+                attributed(HealthDataType.MENSTRUATION_PERIOD) { readMenstruationPeriodData(startTime, endTime, lastSyncTimestamps[HealthDataType.MENSTRUATION_PERIOD]) } else emptyList()
+            val intermenstrualBleedingData = if (HealthDataType.INTERMENSTRUAL_BLEEDING in enabledTypes)
+                attributed(HealthDataType.INTERMENSTRUAL_BLEEDING) { readIntermenstrualBleedingData(startTime, endTime, lastSyncTimestamps[HealthDataType.INTERMENSTRUAL_BLEEDING]) } else emptyList()
+            val ovulationTestData = if (HealthDataType.OVULATION_TEST in enabledTypes)
+                attributed(HealthDataType.OVULATION_TEST) { readOvulationTestData(startTime, endTime, lastSyncTimestamps[HealthDataType.OVULATION_TEST]) } else emptyList()
+            val cervicalMucusData = if (HealthDataType.CERVICAL_MUCUS in enabledTypes)
+                attributed(HealthDataType.CERVICAL_MUCUS) { readCervicalMucusData(startTime, endTime, lastSyncTimestamps[HealthDataType.CERVICAL_MUCUS]) } else emptyList()
+            val sexualActivityData = if (HealthDataType.SEXUAL_ACTIVITY in enabledTypes)
+                attributed(HealthDataType.SEXUAL_ACTIVITY) { readSexualActivityData(startTime, endTime, lastSyncTimestamps[HealthDataType.SEXUAL_ACTIVITY]) } else emptyList()
+            val basalBodyTemperatureData = if (HealthDataType.BASAL_BODY_TEMPERATURE in enabledTypes)
+                attributed(HealthDataType.BASAL_BODY_TEMPERATURE) { readBasalBodyTemperatureData(startTime, endTime, lastSyncTimestamps[HealthDataType.BASAL_BODY_TEMPERATURE]) } else emptyList()
+
+            Result.success(HealthData(
+                steps = stepsData,
+                sleep = sleepData,
+                heartRate = heartRateData,
+                heartRateVariability = heartRateVariabilityData,
+                distance = distanceData,
+                activeCalories = activeCaloriesData,
+                totalCalories = totalCaloriesData,
+                weight = weightData,
+                height = heightData,
+                bloodPressure = bloodPressureData,
+                bloodGlucose = bloodGlucoseData,
+                oxygenSaturation = oxygenSaturationData,
+                bodyTemperature = bodyTemperatureData,
+                skinTemperature = skinTemperatureData,
+                respiratoryRate = respiratoryRateData,
+                restingHeartRate = restingHeartRateData,
+                exercise = exerciseData,
+                hydration = hydrationData,
+                nutrition = nutritionData,
+                basalMetabolicRate = basalMetabolicRateData,
+                bodyFat = bodyFatData,
+                leanBodyMass = leanBodyMassData,
+                bodyWaterMass = bodyWaterMassData,
+                vo2Max = vo2MaxData,
+                boneMass = boneMassData,
+                menstruationFlow = menstruationFlowData,
+                menstruationPeriod = menstruationPeriodData,
+                intermenstrualBleeding = intermenstrualBleedingData,
+                ovulationTest = ovulationTestData,
+                cervicalMucus = cervicalMucusData,
+                sexualActivity = sexualActivityData,
+                basalBodyTemperature = basalBodyTemperatureData
+            ))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun readSleepSessionsInRange(startTime: Instant, endTime: Instant): List<SleepSessionRecord> {
+        val request = ReadRecordsRequest(
+            recordType = SleepSessionRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return readAllRecords(request)
+    }
+
+    private suspend fun averageHeartRateBpm(startTime: Instant, endTime: Instant): Double? {
+        val request = ReadRecordsRequest(
+            recordType = HeartRateRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        val samples = readAllRecords(request).flatMap { it.samples }
+        if (samples.isEmpty()) return null
+        return samples.map { it.beatsPerMinute.toDouble() }.average()
+    }
+
+    private suspend fun averageHeartRateVariabilityMs(startTime: Instant, endTime: Instant): Double? {
+        val request = ReadRecordsRequest(
+            recordType = HeartRateVariabilityRmssdRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        val records = readAllRecords(request)
+        if (records.isEmpty()) return null
+        return records.map { it.heartRateVariabilityMillis }.average()
+    }
+
+    private suspend fun averageRespiratoryRate(startTime: Instant, endTime: Instant): Double? {
+        val request = ReadRecordsRequest(
+            recordType = RespiratoryRateRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        val records = readAllRecords(request)
+        if (records.isEmpty()) return null
+        return records.map { it.rate }.average()
+    }
+
+    private suspend fun aggregateTotalCalories(startTime: Instant, endTime: Instant): Double {
+        return readRawTotalCaloriesData(startTime, endTime, null).sumOf { it.calories }
+    }
+
+    /**
+     * Local calendar days that overlap the half-open window [startTime, endTime).
+     *
+     * Custom sync ends at midnight of the day after the selected end date.
+     * Mapping that exclusive end with [Instant.atZone] + [LocalDate] alone
+     * includes an empty day where queryStart == queryEnd. Health Connect then
+     * rejects [TimeRangeFilter.between] with "Start time must be before end time".
+     */
+    private fun localDatesOverlappingExclusiveEnd(
+        startTime: Instant,
+        endTime: Instant,
+        zone: ZoneId,
+    ): List<LocalDate> {
+        if (!startTime.isBefore(endTime)) return emptyList()
+        val startLocalDate = startTime.atZone(zone).toLocalDate()
+        val endLocalDate = endTime.minusNanos(1).atZone(zone).toLocalDate()
+        if (endLocalDate.isBefore(startLocalDate)) return emptyList()
+        val dates = mutableListOf<LocalDate>()
+        var current = startLocalDate
+        while (!current.isAfter(endLocalDate)) {
+            dates.add(current)
+            current = current.plusDays(1)
+        }
+        return dates
+    }
+
+    private suspend fun readStepsData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int
+    ): List<StepsData> {
+        return when {
+            resolutionMinutes < 0 -> readDailyStepsData(startTime, endTime, lastSync)
+            resolutionMinutes == 0 -> readRawStepsData(startTime, endTime, lastSync)
+            else -> readBucketedStepsData(startTime, endTime, lastSync, resolutionMinutes)
+        }
+    }
+
+    private suspend fun readRawStepsData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?
+    ): List<StepsData> {
+        // Full resolution: forward each Health Connect step interval as-is.
+        val request = ReadRecordsRequest(
+            recordType = StepsRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+        )
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .filter { it.count > 0 }
+            .map { StepsData(count = it.count, startTime = it.startTime, endTime = it.endTime, metadata = it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset)) }
+    }
+
+    private suspend fun readBucketedStepsData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        bucketMinutes: Int
+    ): List<StepsData> {
+        // Group raw step intervals into fixed time buckets (keyed by start time)
+        // and sum their counts, emitting one StepsData per bucket.
+        val request = ReadRecordsRequest(
+            recordType = StepsRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+        )
+        val bucketSeconds = bucketMinutes.toLong() * 60L
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .filter { it.count > 0 }
+            .groupBy { it.startTime.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, records) ->
+                val bucketStart = Instant.ofEpochSecond(bucketIndex * bucketSeconds)
+                StepsData(
+                    count = records.sumOf { it.count },
+                    startTime = bucketStart,
+                    endTime = bucketStart.plusSeconds(bucketSeconds)
+                )
+            }
+    }
+
+    private suspend fun readDailyStepsData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?
+    ): List<StepsData> {
+        // Aggregate steps per calendar day (using device timezone) instead of
+        // a single multi-day total. This produces clean per-day records that
+        // the server can use directly without delta-tracking hacks.
+        val zone = ZoneId.systemDefault()
+        val result = mutableListOf<StepsData>()
+
+        for (currentDate in localDatesOverlappingExclusiveEnd(startTime, endTime, zone)) {
+            val dayStart = currentDate.atStartOfDay(zone).toInstant()
+            val dayEnd = currentDate.plusDays(1).atStartOfDay(zone).toInstant()
+
+            // Clamp to the actual lookback window
+            val queryStart = if (dayStart.isBefore(startTime)) startTime else dayStart
+            val queryEnd = if (dayEnd.isAfter(endTime)) endTime else dayEnd
+
+            // Skip empty clamps (exclusive end on midnight) and days before lastSync
+            if (!queryStart.isBefore(queryEnd)) continue
+            if (lastSync != null && queryEnd.isBefore(lastSync)) continue
+
+            val aggregateRequest = AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd)
+            )
+            val aggregateResponse = aggregateRL(aggregateRequest)
+            val aggregateSteps = aggregateResponse[StepsRecord.COUNT_TOTAL]
+
+            val daySteps: Long = if (aggregateSteps != null && aggregateSteps > 0L) {
+                aggregateSteps
+            } else {
+                // Aggregate returned null, fall back to summing raw records.
+                val rawRequest = ReadRecordsRequest(
+                    recordType = StepsRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd)
+                )
+                readAllRecords(rawRequest).sumOf { it.count }
+            }
+
+            if (daySteps > 0) {
+                result.add(StepsData(
+                    count = daySteps,
+                    // Use the clamped window start, not local midnight: the oldest
+                    // bucket in a lookback window covers only the elapsed part of
+                    // the day, so a midnight start_time would mislabel a partial
+                    // day as a full one. See issue #72.
+                    startTime = queryStart,
+                    endTime = queryEnd
+                ))
+            }
+        }
+
+        return result
+    }
+
+    private suspend fun readSleepData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int,
+    ): List<SleepData> {
+        val request = ReadRecordsRequest(
+            recordType = SleepSessionRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+        )
+
+        val response = readAllRecords(request)
+        val includeStages = resolutionMinutes != SLEEP_SUMMARY
+
+        return response
+            .filter { record ->
+                lastSync == null || record.endTime >= lastSync
+            }
+            .map { record ->
+                val stages = if (includeStages) {
+                    record.stages.map { stage ->
+                        SleepStage(
+                            stage = stage.stage.toString(),
+                            startTime = stage.startTime,
+                            endTime = stage.endTime,
+                            duration = Duration.between(stage.startTime, stage.endTime)
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
+
+                SleepData(
+                    sessionEndTime = record.endTime,
+                    duration = Duration.between(record.startTime, record.endTime),
+                    stages = stages,
+                    metadata = record.toRecordMetadata(startZoneOffset = record.startZoneOffset, endZoneOffset = record.endZoneOffset)
+                )
+            }
+    }
+
+    private suspend fun readHeartRateData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        downsampleMinutes: Int
+    ): List<HeartRateData> {
+        val request = ReadRecordsRequest(recordType = HeartRateRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        val samples = response.flatMap { record ->
+            val metadata = record.toRecordMetadata(startZoneOffset = record.startZoneOffset, endZoneOffset = record.endZoneOffset)
+            record.samples
+                .filter { lastSync == null || it.time >= lastSync }
+                .map { Triple(it.time, it.beatsPerMinute, metadata) }
+        }
+
+        if (downsampleMinutes <= 0) {
+            return samples.map { (time, bpm, metadata) ->
+                HeartRateData(bpm = bpm, time = time, metadata = metadata)
+            }
+        }
+
+        val bucketSeconds = downsampleMinutes.toLong() * 60L
+        return samples
+            .groupBy { it.first.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, bucketSamples) ->
+                val bpms = bucketSamples.map { it.second }
+                HeartRateData(
+                    bpm = bpms.average().roundToLong(),
+                    time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
+                    min = bpms.min(),
+                    max = bpms.max(),
+                    metadata = bucketSamples.first().third.forAggregate(),
+                )
+            }
+    }
+
+    private suspend fun readHeartRateVariabilityData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int,
+    ): List<HeartRateVariabilityData> {
+        val request = ReadRecordsRequest(
+            recordType = HeartRateVariabilityRmssdRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        val samples = readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { Triple(it.time, it.heartRateVariabilityMillis, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+
+        if (resolutionMinutes <= 0) {
+            return samples.map { (time, value, metadata) ->
+                HeartRateVariabilityData(rmssdMillis = value, time = time, metadata = metadata)
+            }
+        }
+
+        val bucketSeconds = resolutionMinutes.toLong() * 60L
+        return samples
+            .groupBy { it.first.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, bucketSamples) ->
+                val values = bucketSamples.map { it.second }
+                HeartRateVariabilityData(
+                    rmssdMillis = values.average(),
+                    time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
+                    min = values.min(),
+                    max = values.max(),
+                    metadata = bucketSamples.first().third.forAggregate(),
+                )
+            }
+    }
+
+    private suspend fun readDistanceData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int,
+    ): List<DistanceData> {
+        return when {
+            resolutionMinutes < 0 -> readDailyDistanceData(startTime, endTime, lastSync)
+            resolutionMinutes == 0 -> readRawDistanceData(startTime, endTime, lastSync)
+            else -> readBucketedDistanceData(startTime, endTime, lastSync, resolutionMinutes)
+        }
+    }
+
+    private suspend fun readRawDistanceData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<DistanceData> {
+        val request = ReadRecordsRequest(
+            recordType = DistanceRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .filter { it.distance.inMeters > 0.0 }
+            .map { DistanceData(it.distance.inMeters, it.startTime, it.endTime, it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset)) }
+    }
+
+    private suspend fun readBucketedDistanceData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        bucketMinutes: Int,
+    ): List<DistanceData> {
+        val bucketSeconds = bucketMinutes.toLong() * 60L
+        return readRawDistanceData(startTime, endTime, lastSync)
+            .groupBy { it.startTime.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, records) ->
+                val bucketStart = Instant.ofEpochSecond(bucketIndex * bucketSeconds)
+                DistanceData(
+                    meters = records.sumOf { it.meters },
+                    startTime = bucketStart,
+                    endTime = bucketStart.plusSeconds(bucketSeconds),
+                )
+            }
+    }
+
+    private suspend fun readDailyDistanceData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<DistanceData> {
+        // Aggregate distance per calendar day (same pattern as steps).
+        // If the aggregate returns null (e.g., Google Health/Fit data after the Fitbit rebrand),
+        // fall back to summing raw DistanceRecord entries so distance is never silently omitted.
+        val zone = ZoneId.systemDefault()
+        val result = mutableListOf<DistanceData>()
+
+        for (currentDate in localDatesOverlappingExclusiveEnd(startTime, endTime, zone)) {
+            val dayStart = currentDate.atStartOfDay(zone).toInstant()
+            val dayEnd = currentDate.plusDays(1).atStartOfDay(zone).toInstant()
+
+            val queryStart = if (dayStart.isBefore(startTime)) startTime else dayStart
+            val queryEnd = if (dayEnd.isAfter(endTime)) endTime else dayEnd
+
+            if (!queryStart.isBefore(queryEnd)) continue
+            if (lastSync != null && queryEnd.isBefore(lastSync)) continue
+
+            val aggregateRequest = AggregateRequest(
+                metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd)
+            )
+            val aggregateResponse = aggregateRL(aggregateRequest)
+            val aggregateMeters = aggregateResponse[DistanceRecord.DISTANCE_TOTAL]?.inMeters
+
+            val dayDistance: Double = if (aggregateMeters != null && aggregateMeters > 0.0) {
+                aggregateMeters
+            } else {
+                // Aggregate returned null or zero — fall back to raw records.
+                val rawRequest = ReadRecordsRequest(
+                    recordType = DistanceRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd)
+                )
+                readAllRecords(rawRequest).sumOf { it.distance.inMeters }
+            }
+
+            if (dayDistance > 0.0) {
+                result.add(DistanceData(
+                    meters = dayDistance,
+                    // Clamped window start, not local midnight — see issue #72.
+                    startTime = queryStart,
+                    endTime = queryEnd
+                ))
+            }
+        }
+
+        return result
+    }
+
+    private suspend fun readActiveCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int,
+    ): List<ActiveCaloriesData> {
+        return when {
+            resolutionMinutes < 0 -> readDailyActiveCaloriesData(startTime, endTime, lastSync)
+            resolutionMinutes == 0 -> readRawActiveCaloriesData(startTime, endTime, lastSync)
+            else -> readBucketedActiveCaloriesData(startTime, endTime, lastSync, resolutionMinutes)
+        }
+    }
+
+    private suspend fun readRawActiveCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<ActiveCaloriesData> {
+        val request = ReadRecordsRequest(
+            recordType = ActiveCaloriesBurnedRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .filter { it.energy.inKilocalories > 0.0 }
+            .map { ActiveCaloriesData(it.energy.inKilocalories, it.startTime, it.endTime, it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset)) }
+    }
+
+    private suspend fun readBucketedActiveCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        bucketMinutes: Int,
+    ): List<ActiveCaloriesData> {
+        val bucketSeconds = bucketMinutes.toLong() * 60L
+        return readRawActiveCaloriesData(startTime, endTime, lastSync)
+            .groupBy { it.startTime.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, records) ->
+                val bucketStart = Instant.ofEpochSecond(bucketIndex * bucketSeconds)
+                ActiveCaloriesData(
+                    calories = records.sumOf { it.calories },
+                    startTime = bucketStart,
+                    endTime = bucketStart.plusSeconds(bucketSeconds),
+                )
+            }
+    }
+
+    private suspend fun readDailyActiveCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<ActiveCaloriesData> {
+        // Aggregate active calories per calendar day (same pattern as steps/distance)
+        val zone = ZoneId.systemDefault()
+        val result = mutableListOf<ActiveCaloriesData>()
+
+        for (currentDate in localDatesOverlappingExclusiveEnd(startTime, endTime, zone)) {
+            val dayStart = currentDate.atStartOfDay(zone).toInstant()
+            val dayEnd = currentDate.plusDays(1).atStartOfDay(zone).toInstant()
+
+            val queryStart = if (dayStart.isBefore(startTime)) startTime else dayStart
+            val queryEnd = if (dayEnd.isAfter(endTime)) endTime else dayEnd
+
+            if (!queryStart.isBefore(queryEnd)) continue
+            if (lastSync != null && queryEnd.isBefore(lastSync)) continue
+
+            val aggregateRequest = AggregateRequest(
+                metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd)
+            )
+            val aggregateResponse = aggregateRL(aggregateRequest)
+            val aggregateKcal = aggregateResponse[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
+
+            val dayCalories: Double = if (aggregateKcal != null && aggregateKcal > 0.0) {
+                aggregateKcal
+            } else {
+                // Aggregate returned null — fall back to summing raw records.
+                val rawRequest = ReadRecordsRequest(
+                    recordType = ActiveCaloriesBurnedRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd)
+                )
+                readAllRecords(rawRequest).sumOf { it.energy.inKilocalories }
+            }
+
+            if (dayCalories > 0.0) {
+                result.add(ActiveCaloriesData(
+                    calories = dayCalories,
+                    // Clamped window start, not local midnight — see issue #72.
+                    startTime = queryStart,
+                    endTime = queryEnd
+                ))
+            }
+        }
+
+        return result
+    }
+
+    private suspend fun readTotalCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int,
+    ): List<TotalCaloriesData> {
+        return when {
+            resolutionMinutes < 0 -> readDailyTotalCaloriesData(startTime, endTime, lastSync)
+            resolutionMinutes == 0 -> readRawTotalCaloriesData(startTime, endTime, lastSync)
+            else -> readBucketedTotalCaloriesData(startTime, endTime, lastSync, resolutionMinutes)
+        }
+    }
+
+    private suspend fun readRawTotalCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<TotalCaloriesData> {
+        val request = ReadRecordsRequest(
+            recordType = TotalCaloriesBurnedRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .map { TotalCaloriesData(it.energy.inKilocalories, it.startTime, it.endTime, it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset)) }
+    }
+
+    private suspend fun readBucketedTotalCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        bucketMinutes: Int,
+    ): List<TotalCaloriesData> {
+        val bucketSeconds = bucketMinutes.toLong() * 60L
+        return readRawTotalCaloriesData(startTime, endTime, lastSync)
+            .groupBy { it.startTime.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, records) ->
+                val bucketStart = Instant.ofEpochSecond(bucketIndex * bucketSeconds)
+                TotalCaloriesData(
+                    calories = records.sumOf { it.calories },
+                    startTime = bucketStart,
+                    endTime = bucketStart.plusSeconds(bucketSeconds),
+                )
+            }
+    }
+
+    private suspend fun readDailyTotalCaloriesData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<TotalCaloriesData> {
+        val zone = ZoneId.systemDefault()
+        val result = mutableListOf<TotalCaloriesData>()
+
+        for (currentDate in localDatesOverlappingExclusiveEnd(startTime, endTime, zone)) {
+            val dayStart = currentDate.atStartOfDay(zone).toInstant()
+            val dayEnd = currentDate.plusDays(1).atStartOfDay(zone).toInstant()
+            val queryStart = if (dayStart.isBefore(startTime)) startTime else dayStart
+            val queryEnd = if (dayEnd.isAfter(endTime)) endTime else dayEnd
+
+            if (!queryStart.isBefore(queryEnd)) continue
+            if (lastSync != null && queryEnd.isBefore(lastSync)) continue
+
+            val dayCalories = readRawTotalCaloriesData(queryStart, queryEnd, null)
+                .sumOf { it.calories }
+
+            if (dayCalories > 0.0) {
+                result.add(
+                    TotalCaloriesData(
+                        calories = dayCalories,
+                        // Clamped window start, not local midnight — see issue #72.
+                        startTime = queryStart,
+                        endTime = queryEnd,
+                    ),
+                )
+            }
+        }
+        return result
+    }
+
+    private suspend fun readWeightData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<WeightData> {
+        val request = ReadRecordsRequest(recordType = WeightRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { WeightData(it.weight.inKilograms, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readHeightData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<HeightData> {
+        val request = ReadRecordsRequest(recordType = HeightRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { HeightData(it.height.inMeters, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readBloodPressureData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BloodPressureData> {
+        val request = ReadRecordsRequest(recordType = BloodPressureRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { BloodPressureData(it.systolic.inMillimetersOfMercury, it.diastolic.inMillimetersOfMercury, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readBloodGlucoseData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BloodGlucoseData> {
+        val request = ReadRecordsRequest(recordType = BloodGlucoseRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { BloodGlucoseData(it.level.inMillimolesPerLiter, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readOxygenSaturationData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int = RESOLUTION_FULL,
+    ): List<OxygenSaturationData> {
+        val request = ReadRecordsRequest(
+            recordType = OxygenSaturationRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        val samples = readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { Triple(it.time, it.percentage.value, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+
+        if (resolutionMinutes <= 0) {
+            return samples.map { (time, value, metadata) ->
+                OxygenSaturationData(percentage = value, time = time, metadata = metadata)
+            }
+        }
+
+        val bucketSeconds = resolutionMinutes.toLong() * 60L
+        return samples
+            .groupBy { it.first.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, bucketSamples) ->
+                val values = bucketSamples.map { it.second }
+                OxygenSaturationData(
+                    percentage = values.average(),
+                    time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
+                    min = values.min(),
+                    max = values.max(),
+                    metadata = bucketSamples.first().third.forAggregate(),
+                )
+            }
+    }
+
+    private suspend fun readBodyTemperatureData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BodyTemperatureData> {
+        val request = ReadRecordsRequest(recordType = BodyTemperatureRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { BodyTemperatureData(it.temperature.inCelsius, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readSkinTemperatureData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int = RESOLUTION_FULL,
+    ): List<SkinTemperatureData> {
+        val request = ReadRecordsRequest(
+            recordType = SkinTemperatureRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        val samples = readAllRecords(request).flatMap { record ->
+            record.deltas
+                .filter { lastSync == null || it.time >= lastSync }
+                .map { delta ->
+                    SkinTemperatureData(
+                        time = delta.time,
+                        deltaCelsius = delta.delta.inCelsius,
+                        baselineCelsius = record.baseline?.inCelsius,
+                        measurementLocation = record.measurementLocation,
+                        metadata = record.toRecordMetadata(startZoneOffset = record.startZoneOffset, endZoneOffset = record.endZoneOffset),
+                    )
+                }
+        }
+
+        if (resolutionMinutes <= 0) {
+            return samples
+        }
+
+        val bucketSeconds = resolutionMinutes.toLong() * 60L
+        return samples
+            .groupBy { it.time.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, bucketSamples) ->
+                val deltas = bucketSamples.map { it.deltaCelsius }
+                val first = bucketSamples.first()
+                SkinTemperatureData(
+                    time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
+                    deltaCelsius = deltas.average(),
+                    baselineCelsius = first.baselineCelsius,
+                    measurementLocation = first.measurementLocation,
+                    minDeltaCelsius = deltas.min(),
+                    maxDeltaCelsius = deltas.max(),
+                    metadata = first.metadata?.forAggregate(),
+                )
+            }
+    }
+
+    private suspend fun readRespiratoryRateData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int = RESOLUTION_FULL,
+    ): List<RespiratoryRateData> {
+        val request = ReadRecordsRequest(
+            recordType = RespiratoryRateRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        val samples = readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { Triple(it.time, it.rate, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+
+        if (resolutionMinutes <= 0) {
+            return samples.map { (time, value, metadata) ->
+                RespiratoryRateData(rate = value, time = time, metadata = metadata)
+            }
+        }
+
+        val bucketSeconds = resolutionMinutes.toLong() * 60L
+        return samples
+            .groupBy { it.first.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, bucketSamples) ->
+                val values = bucketSamples.map { it.second }
+                RespiratoryRateData(
+                    rate = values.average(),
+                    time = Instant.ofEpochSecond(bucketIndex * bucketSeconds),
+                    min = values.min(),
+                    max = values.max(),
+                    metadata = bucketSamples.first().third.forAggregate(),
+                )
+            }
+    }
+
+    private suspend fun readRestingHeartRateData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<RestingHeartRateData> {
+        val request = ReadRecordsRequest(recordType = RestingHeartRateRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { RestingHeartRateData(it.beatsPerMinute, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readExerciseData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        includeDistance: Boolean,
+        includeSteps: Boolean
+    ): List<ExerciseData> {
+        val request = ReadRecordsRequest(recordType = ExerciseSessionRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.endTime >= lastSync }
+            .map {
+                val duration = Duration.between(it.startTime, it.endTime)
+                // Guard against zero/negative-duration sessions (seen from some watch
+                // companion apps): Health Connect rejects a query whose range isn't
+                // strictly increasing, so skip the sub-aggregates rather than crash.
+                val hasPositiveDuration = it.startTime.isBefore(it.endTime)
+                val distanceMeters = if (includeDistance && hasPositiveDuration) readDistanceTotal(it.startTime, it.endTime) else null
+                val steps = if (includeSteps && hasPositiveDuration) readStepsTotal(it.startTime, it.endTime) else null
+                val cadenceMetrics = if (includeSteps && hasPositiveDuration) readStepsCadenceMetrics(it.startTime, it.endTime) else StepsCadenceMetrics()
+                ExerciseData(
+                    type = it.exerciseType.toString(),
+                    title = it.title?.takeIf { title -> title.isNotBlank() },
+                    startTime = it.startTime,
+                    endTime = it.endTime,
+                    duration = duration,
+                    distanceMeters = distanceMeters,
+                    steps = steps,
+                    avgCadenceSpm = cadenceMetrics.avg ?: deriveAverageCadenceSpm(steps, duration),
+                    maxCadenceSpm = cadenceMetrics.max,
+                    strideLengthMeters = deriveStrideLengthMeters(distanceMeters, steps),
+                    metadata = it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset)
+                )
+            }
+    }
+
+    private data class StepsCadenceMetrics(
+        val avg: Double? = null,
+        val max: Double? = null
+    )
+
+    private suspend fun aggregateSteps(startTime: Instant, endTime: Instant): Long {
+        val request = AggregateRequest(
+            metrics = setOf(StepsRecord.COUNT_TOTAL),
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return aggregateRL(request)[StepsRecord.COUNT_TOTAL] ?: 0L
+    }
+
+    private suspend fun aggregateDistanceMeters(startTime: Instant, endTime: Instant): Double {
+        val request = AggregateRequest(
+            metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return aggregateRL(request)[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0
+    }
+
+    private suspend fun aggregateActiveCalories(startTime: Instant, endTime: Instant): Double {
+        val request = AggregateRequest(
+            metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return aggregateRL(request)[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]
+            ?.inKilocalories ?: 0.0
+    }
+
+    private suspend fun readStepsTotal(startTime: Instant, endTime: Instant): Long? {
+        val steps = aggregateSteps(startTime, endTime)
+        return steps.takeIf { it > 0L }
+    }
+
+    private suspend fun readStepsCadenceMetrics(startTime: Instant, endTime: Instant): StepsCadenceMetrics {
+        return try {
+            val request = AggregateRequest(
+                metrics = setOf(StepsCadenceRecord.RATE_AVG, StepsCadenceRecord.RATE_MAX),
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+            val response = aggregateRL(request)
+            StepsCadenceMetrics(
+                avg = response[StepsCadenceRecord.RATE_AVG]?.takeIf { it > 0.0 },
+                max = response[StepsCadenceRecord.RATE_MAX]?.takeIf { it > 0.0 }
+            )
+        } catch (_: Exception) {
+            // Cadence is optional. Keep exercise sync working on providers that expose steps but not cadence.
+            StepsCadenceMetrics()
+        }
+    }
+
+    private fun deriveAverageCadenceSpm(steps: Long?, duration: Duration): Double? {
+        if (steps == null || steps <= 0L || duration.isZero || duration.isNegative) {
+            return null
+        }
+        val durationMinutes = duration.toMillis() / 60000.0
+        return (steps.toDouble() / durationMinutes).takeIf { it > 0.0 }
+    }
+
+    private fun deriveStrideLengthMeters(distanceMeters: Double?, steps: Long?): Double? {
+        if (distanceMeters == null || distanceMeters <= 0.0 || steps == null || steps <= 0L) {
+            return null
+        }
+        return distanceMeters / steps.toDouble()
+    }
+
+    private suspend fun readDistanceTotal(startTime: Instant, endTime: Instant): Double? {
+        val distanceMeters = aggregateDistanceMeters(startTime, endTime)
+        return distanceMeters.takeIf { it > 0.0 }
+    }
+
+    private suspend fun readHydrationData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int = RESOLUTION_FULL,
+    ): List<HydrationData> {
+        return when {
+            resolutionMinutes < 0 -> readDailyHydrationData(startTime, endTime, lastSync)
+            resolutionMinutes == 0 -> readRawHydrationData(startTime, endTime, lastSync)
+            else -> readBucketedHydrationData(startTime, endTime, lastSync, resolutionMinutes)
+        }
+    }
+
+    private suspend fun readRawHydrationData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<HydrationData> {
+        val request = ReadRecordsRequest(
+            recordType = HydrationRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .map { HydrationData(it.volume.inLiters, it.startTime, it.endTime, it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset)) }
+    }
+
+    private suspend fun readBucketedHydrationData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        bucketMinutes: Int,
+    ): List<HydrationData> {
+        val bucketSeconds = bucketMinutes.toLong() * 60L
+        return readRawHydrationData(startTime, endTime, lastSync)
+            .groupBy { it.startTime.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, records) ->
+                val bucketStart = Instant.ofEpochSecond(bucketIndex * bucketSeconds)
+                HydrationData(
+                    liters = records.sumOf { it.liters },
+                    startTime = bucketStart,
+                    endTime = bucketStart.plusSeconds(bucketSeconds),
+                )
+            }
+    }
+
+    private suspend fun readDailyHydrationData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<HydrationData> {
+        val zone = ZoneId.systemDefault()
+        val result = mutableListOf<HydrationData>()
+
+        for (currentDate in localDatesOverlappingExclusiveEnd(startTime, endTime, zone)) {
+            val dayStart = currentDate.atStartOfDay(zone).toInstant()
+            val dayEnd = currentDate.plusDays(1).atStartOfDay(zone).toInstant()
+            val queryStart = if (dayStart.isBefore(startTime)) startTime else dayStart
+            val queryEnd = if (dayEnd.isAfter(endTime)) endTime else dayEnd
+
+            if (!queryStart.isBefore(queryEnd)) continue
+            if (lastSync != null && queryEnd.isBefore(lastSync)) continue
+
+            val dayLiters = readRawHydrationData(queryStart, queryEnd, null).sumOf { it.liters }
+            if (dayLiters > 0.0) {
+                // Clamped window start, not local midnight — see issue #72.
+                result.add(HydrationData(dayLiters, queryStart, queryEnd))
+            }
+        }
+        return result
+    }
+
+    private suspend fun readNutritionData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        resolutionMinutes: Int = RESOLUTION_FULL,
+    ): List<NutritionData> {
+        return when {
+            resolutionMinutes < 0 -> readDailyNutritionData(startTime, endTime, lastSync)
+            resolutionMinutes == 0 -> readRawNutritionData(startTime, endTime, lastSync)
+            else -> readBucketedNutritionData(startTime, endTime, lastSync, resolutionMinutes)
+        }
+    }
+
+    private suspend fun readRawNutritionData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<NutritionData> {
+        val request = ReadRecordsRequest(
+            recordType = NutritionRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+        )
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .map {
+                NutritionData(
+                    calories = it.energy?.inKilocalories,
+                    protein = it.protein?.inGrams,
+                    carbs = it.totalCarbohydrate?.inGrams,
+                    fat = it.totalFat?.inGrams,
+                    sugar = it.sugar?.inGrams,
+                    sodium = it.sodium?.inGrams,
+                    dietaryFiber = it.dietaryFiber?.inGrams,
+                    name = it.name,
+                    startTime = it.startTime,
+                    endTime = it.endTime,
+                    metadata = it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset),
+                )
+            }
+    }
+
+    private fun mergeNutritionRecords(records: List<NutritionData>, startTime: Instant, endTime: Instant): NutritionData {
+        return NutritionData(
+            calories = records.mapNotNull { it.calories }.takeIf { it.isNotEmpty() }?.sum(),
+            protein = records.mapNotNull { it.protein }.takeIf { it.isNotEmpty() }?.sum(),
+            carbs = records.mapNotNull { it.carbs }.takeIf { it.isNotEmpty() }?.sum(),
+            fat = records.mapNotNull { it.fat }.takeIf { it.isNotEmpty() }?.sum(),
+            sugar = records.mapNotNull { it.sugar }.takeIf { it.isNotEmpty() }?.sum(),
+            sodium = records.mapNotNull { it.sodium }.takeIf { it.isNotEmpty() }?.sum(),
+            dietaryFiber = records.mapNotNull { it.dietaryFiber }.takeIf { it.isNotEmpty() }?.sum(),
+            name = null,
+            startTime = startTime,
+            endTime = endTime,
+        )
+    }
+
+    private suspend fun readBucketedNutritionData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+        bucketMinutes: Int,
+    ): List<NutritionData> {
+        val bucketSeconds = bucketMinutes.toLong() * 60L
+        return readRawNutritionData(startTime, endTime, lastSync)
+            .groupBy { it.startTime.epochSecond / bucketSeconds }
+            .toSortedMap()
+            .map { (bucketIndex, records) ->
+                val bucketStart = Instant.ofEpochSecond(bucketIndex * bucketSeconds)
+                val bucketEnd = bucketStart.plusSeconds(bucketSeconds)
+                mergeNutritionRecords(records, bucketStart, bucketEnd)
+            }
+    }
+
+    private suspend fun readDailyNutritionData(
+        startTime: Instant,
+        endTime: Instant,
+        lastSync: Instant?,
+    ): List<NutritionData> {
+        val zone = ZoneId.systemDefault()
+        val result = mutableListOf<NutritionData>()
+
+        for (currentDate in localDatesOverlappingExclusiveEnd(startTime, endTime, zone)) {
+            val dayStart = currentDate.atStartOfDay(zone).toInstant()
+            val dayEnd = currentDate.plusDays(1).atStartOfDay(zone).toInstant()
+            val queryStart = if (dayStart.isBefore(startTime)) startTime else dayStart
+            val queryEnd = if (dayEnd.isAfter(endTime)) endTime else dayEnd
+
+            if (!queryStart.isBefore(queryEnd)) continue
+            if (lastSync != null && queryEnd.isBefore(lastSync)) continue
+
+            val dayRecords = readRawNutritionData(queryStart, queryEnd, null)
+            if (dayRecords.isNotEmpty()) {
+                // Clamped window start, not local midnight — see issue #72.
+                result.add(mergeNutritionRecords(dayRecords, queryStart, queryEnd))
+            }
+        }
+        return result
+    }
+
+    private suspend fun readBasalMetabolicRateData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BasalMetabolicRateData> {
+        val request = ReadRecordsRequest(recordType = BasalMetabolicRateRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { BasalMetabolicRateData(it.basalMetabolicRate.inWatts, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readBodyFatData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BodyFatData> {
+        val request = ReadRecordsRequest(recordType = BodyFatRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { BodyFatData(it.percentage.value, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readLeanBodyMassData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<LeanBodyMassData> {
+        val request = ReadRecordsRequest(recordType = LeanBodyMassRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { LeanBodyMassData(it.mass.inKilograms, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readBodyWaterMassData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BodyWaterMassData> {
+        val request = ReadRecordsRequest(recordType = BodyWaterMassRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { BodyWaterMassData(it.mass.inKilograms, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readVo2MaxData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<Vo2MaxData> {
+        val request = ReadRecordsRequest(recordType = Vo2MaxRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { Vo2MaxData(it.vo2MillilitersPerMinuteKilogram, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readBoneMassData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BoneMassData> {
+        val request = ReadRecordsRequest(recordType = BoneMassRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        val response = readAllRecords(request)
+        return response.filter { lastSync == null || it.time >= lastSync }
+            .map { BoneMassData(it.mass.inKilograms, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readMenstruationFlowData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<MenstruationFlowData> {
+        val request = ReadRecordsRequest(recordType = MenstruationFlowRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        return readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { MenstruationFlowData(it.flow, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readMenstruationPeriodData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<MenstruationPeriodData> {
+        val request = ReadRecordsRequest(recordType = MenstruationPeriodRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        return readAllRecords(request)
+            .filter { lastSync == null || it.endTime >= lastSync }
+            .map { MenstruationPeriodData(it.startTime, it.endTime, it.toRecordMetadata(startZoneOffset = it.startZoneOffset, endZoneOffset = it.endZoneOffset)) }
+    }
+
+    private suspend fun readIntermenstrualBleedingData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<IntermenstrualBleedingData> {
+        val request = ReadRecordsRequest(recordType = IntermenstrualBleedingRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        return readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { IntermenstrualBleedingData(it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readOvulationTestData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<OvulationTestData> {
+        val request = ReadRecordsRequest(recordType = OvulationTestRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        return readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { OvulationTestData(it.result, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readCervicalMucusData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<CervicalMucusData> {
+        val request = ReadRecordsRequest(recordType = CervicalMucusRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        return readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { CervicalMucusData(it.appearance, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readSexualActivityData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<SexualActivityData> {
+        val request = ReadRecordsRequest(recordType = SexualActivityRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        return readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { SexualActivityData(it.protectionUsed, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun readBasalBodyTemperatureData(startTime: Instant, endTime: Instant, lastSync: Instant?): List<BasalBodyTemperatureData> {
+        val request = ReadRecordsRequest(recordType = BasalBodyTemperatureRecord::class, timeRangeFilter = TimeRangeFilter.between(startTime, endTime))
+        return readAllRecords(request)
+            .filter { lastSync == null || it.time >= lastSync }
+            .map { BasalBodyTemperatureData(it.temperature.inCelsius, it.measurementLocation, it.time, it.toRecordMetadata(zoneOffset = it.zoneOffset)) }
+    }
+
+    private suspend fun <T : Record> readAllRecords(request: ReadRecordsRequest<T>): List<T> {
+        return try {
+            readAllRecordsPaged(request)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (!HealthConnectReadRecovery.isCorruptIntervalRecordError(e)) throw e
+            // TimeRangeFilter.startTime/endTime are library-group; Instant between()
+            // filters always set both, and we need them to bisect corrupt windows.
+            @Suppress("RestrictedApi")
+            val start = request.timeRangeFilter.startTime
+            @Suppress("RestrictedApi")
+            val end = request.timeRangeFilter.endTime
+            if (start == null || end == null || !start.isBefore(end)) throw e
+            Log.w(TAG, "Corrupt ${request.recordType.simpleName} interval record(s); splitting the window")
+            readAllRecordsSkippingCorrupt(request, start, end)
+        }
+    }
+
+    /**
+     * Bisect [start, end) until each slice either reads cleanly or is smaller than
+     * [HealthConnectReadRecovery.MIN_CORRUPT_SKIP_CHUNK], then skip the bad slice.
+     * One companion-written zero-duration row otherwise fails the whole page decode.
+     */
+    private suspend fun <T : Record> readAllRecordsSkippingCorrupt(
+        template: ReadRecordsRequest<T>,
+        start: Instant,
+        end: Instant,
+    ): List<T> {
+        val request = ReadRecordsRequest(
+            recordType = template.recordType,
+            timeRangeFilter = TimeRangeFilter.between(start, end),
+            dataOriginFilter = template.dataOriginFilter,
+            ascendingOrder = template.ascendingOrder,
+            pageSize = template.pageSize,
+        )
+        return try {
+            readAllRecordsPaged(request)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (!HealthConnectReadRecovery.isCorruptIntervalRecordError(e)) throw e
+            val mid = HealthConnectReadRecovery.midpoint(start, end)
+            if (mid == null) {
+                Log.w(TAG, "Skipping a corrupt ${template.recordType.simpleName} slice")
+                emptyList()
+            } else {
+                readAllRecordsSkippingCorrupt(template, start, mid) +
+                    readAllRecordsSkippingCorrupt(template, mid, end)
+            }
+        }
+    }
+
+    private suspend fun <T : Record> readAllRecordsPaged(request: ReadRecordsRequest<T>): List<T> {
+        val all = mutableListOf<T>()
+        var token: String? = null
+        var firstPage = true
+        val throttlePages = request.recordType in PAGINATED_READ_THROTTLE_TYPES
+        do {
+            // Gentle inter-page throttle on heavy, multi-page reads (e.g. heart rate over a
+            // long window) so they don't trip Health Connect's burst quota in the first place.
+            if (throttlePages && !firstPage) delay(READ_PAGE_DELAY_MS)
+            firstPage = false
+            val current = if (token == null) request else ReadRecordsRequest(
+                recordType = request.recordType,
+                timeRangeFilter = request.timeRangeFilter,
+                dataOriginFilter = request.dataOriginFilter,
+                ascendingOrder = request.ascendingOrder,
+                pageSize = request.pageSize,
+                pageToken = token,
+            )
+            val page = withHealthConnectRetry { healthConnectClient.readRecords(current) }
+            all.addAll(page.records)
+            token = page.pageToken
+        } while (token != null)
+        return all
+    }
+
+    /**
+     * Retries a Health Connect call when the platform throws its rate-limit /
+     * quota-exceeded error, backing off exponentially (1s, 2s, 4s, 8s). Any other
+     * error propagates immediately. This mitigates the periodic (burst) quota; the
+     * separate daily quota still needs real time to replenish, so after the last
+     * attempt the original exception is rethrown for the UI to surface.
+     */
+    private suspend fun <T> withHealthConnectRetry(
+        maxAttempts: Int = RATE_LIMIT_MAX_ATTEMPTS,
+        block: suspend () -> T,
+    ): T {
+        var attempt = 0
+        var delayMs = RATE_LIMIT_INITIAL_DELAY_MS
+        while (true) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                val msg = e.message?.lowercase().orEmpty()
+                val isRateLimit = msg.contains("rate limit") || msg.contains("quota")
+                attempt++
+                if (!isRateLimit || attempt >= maxAttempts) throw e
+                delay(delayMs)
+                delayMs = (delayMs * 2).coerceAtMost(RATE_LIMIT_MAX_DELAY_MS)
+            }
+        }
+    }
+
+    private suspend fun aggregateRL(request: AggregateRequest) =
+        withHealthConnectRetry { healthConnectClient.aggregate(request) }
+
+    fun isHealthConnectAvailable(): Boolean {
+        return try {
+            HealthConnectClient.getOrCreate(context)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun hasPermissions(requiredPermissions: Set<String> = ALL_PERMISSIONS): Boolean {
+        if (!isHealthConnectAvailable()) return false
+        val granted = healthConnectClient.permissionController.getGrantedPermissions()
+        return requiredPermissions.all { it in granted }
+    }
+
+    suspend fun getGrantedPermissions(): Set<String> {
+        if (!isHealthConnectAvailable()) return emptySet()
+        return healthConnectClient.permissionController.getGrantedPermissions()
+    }
+
+    suspend fun requestPermissions(permissions: Set<String>): android.content.Intent {
+        if (!isHealthConnectAvailable()) {
+            throw IllegalStateException("Health Connect is not available on this device")
+        }
+        val contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+        return contract.createIntent(context, permissions.toTypedArray())
+    }
+
+    companion object {
+        private const val TAG = "HealthConnectReader"
+        private const val LOOKBACK_HOURS = 48L
+
+        private const val RATE_LIMIT_MAX_ATTEMPTS = 4
+        private const val RATE_LIMIT_INITIAL_DELAY_MS = 1_000L
+        private const val RATE_LIMIT_MAX_DELAY_MS = 8_000L
+        private const val READ_PAGE_DELAY_MS = 120L
+
+        /** Record types that commonly paginate and benefit from inter-page throttling. */
+        private val PAGINATED_READ_THROTTLE_TYPES = setOf(
+            HeartRateRecord::class,
+            HeartRateVariabilityRmssdRecord::class,
+            StepsRecord::class,
+            SleepSessionRecord::class,
+            ExerciseSessionRecord::class,
+        )
+
+        fun grantedDataTypes(grantedPermissions: Set<String>): List<HealthDataType> =
+            HealthDataType.entries.filter { type ->
+                HealthPermission.getReadPermission(type.recordClass) in grantedPermissions
+            }
+
+        fun getPermissionsForTypes(
+            types: Set<HealthDataType>,
+            includeBackgroundPermission: Boolean = true,
+            includeHistoryPermission: Boolean = true,
+            includeStepsCadence: Boolean = true
+        ): Set<String> {
+            val permissions = types.map { HealthPermission.getReadPermission(it.recordClass) }.toMutableSet()
+            if (includeStepsCadence && HealthDataType.STEPS in types) {
+                permissions.add(HealthPermission.getReadPermission(StepsCadenceRecord::class))
+            }
+            if (includeBackgroundPermission) {
+                permissions.add(BACKGROUND_PERMISSION_STR)
+            }
+            if (includeHistoryPermission) {
+                permissions.add("android.permission.health.READ_HEALTH_DATA_HISTORY")
+            }
+            return permissions
+        }
+
+        const val BACKGROUND_PERMISSION_STR = "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
+
+        val INITIAL_PERMISSIONS: Set<String>
+            get() = ALL_PERMISSIONS + BACKGROUND_PERMISSION_STR
+
+        val ALL_PERMISSIONS = setOf(
+            HealthPermission.getReadPermission(StepsRecord::class),
+            HealthPermission.getReadPermission(StepsCadenceRecord::class),
+            HealthPermission.getReadPermission(SleepSessionRecord::class),
+            HealthPermission.getReadPermission(HeartRateRecord::class),
+            HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
+            HealthPermission.getReadPermission(DistanceRecord::class),
+            HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
+            HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
+            HealthPermission.getReadPermission(WeightRecord::class),
+            HealthPermission.getReadPermission(HeightRecord::class),
+            HealthPermission.getReadPermission(BloodPressureRecord::class),
+            HealthPermission.getReadPermission(BloodGlucoseRecord::class),
+            HealthPermission.getReadPermission(OxygenSaturationRecord::class),
+            HealthPermission.getReadPermission(BodyTemperatureRecord::class),
+            HealthPermission.getReadPermission(SkinTemperatureRecord::class),
+            HealthPermission.getReadPermission(RespiratoryRateRecord::class),
+            HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+            HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+            HealthPermission.getReadPermission(HydrationRecord::class),
+            HealthPermission.getReadPermission(NutritionRecord::class),
+            HealthPermission.getReadPermission(BasalMetabolicRateRecord::class),
+            HealthPermission.getReadPermission(BodyFatRecord::class),
+            HealthPermission.getReadPermission(LeanBodyMassRecord::class),
+            HealthPermission.getReadPermission(BodyWaterMassRecord::class),
+            HealthPermission.getReadPermission(Vo2MaxRecord::class),
+            HealthPermission.getReadPermission(BoneMassRecord::class),
+            HealthPermission.getReadPermission(MenstruationFlowRecord::class),
+            HealthPermission.getReadPermission(MenstruationPeriodRecord::class),
+            HealthPermission.getReadPermission(IntermenstrualBleedingRecord::class),
+            HealthPermission.getReadPermission(OvulationTestRecord::class),
+            HealthPermission.getReadPermission(CervicalMucusRecord::class),
+            HealthPermission.getReadPermission(SexualActivityRecord::class),
+            HealthPermission.getReadPermission(BasalBodyTemperatureRecord::class),
+            "android.permission.health.READ_HEALTH_DATA_HISTORY"
+        )
+    }
+}

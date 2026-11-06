@@ -22,3 +22,5 @@ dependencyResolutionManagement {
 rootProject.name = "HC Webhook"
 include(":app")
 include(":nutrition")
+include(":healthcore")
+include(":healthcore-core")

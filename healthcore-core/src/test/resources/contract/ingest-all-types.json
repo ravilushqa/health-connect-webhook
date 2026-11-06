@@ -1,0 +1,653 @@
+{
+    "timestamp": "2026-01-10T12:00:00Z",
+    "app_version": "1.0.0-test",
+    "steps": [
+        {
+            "count": 1234,
+            "start_time": "2026-01-10T06:00:00Z",
+            "end_time": "2026-01-10T06:15:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 1",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000001",
+                "last_modified_time": "2026-01-10T06:01:30Z"
+            }
+        },
+        {
+            "count": 4321,
+            "start_time": "2026-01-10T06:00:00Z",
+            "end_time": "2026-01-11T06:00:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                }
+            }
+        }
+    ],
+    "sleep": [
+        {
+            "session_end_time": "2026-01-10T05:30:00Z",
+            "duration_seconds": 25200,
+            "stages": [
+                {
+                    "stage": "light",
+                    "start_time": "2026-01-09T22:30:00Z",
+                    "end_time": "2026-01-10T01:00:00Z",
+                    "duration_seconds": 9000
+                },
+                {
+                    "stage": "deep",
+                    "start_time": "2026-01-10T01:00:00Z",
+                    "end_time": "2026-01-10T05:30:00Z",
+                    "duration_seconds": 16200
+                }
+            ],
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 2",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000002",
+                "last_modified_time": "2026-01-10T06:02:30Z"
+            }
+        },
+        {
+            "session_end_time": "2026-01-09T05:00:00Z",
+            "duration_seconds": 21600,
+            "stages": [],
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000003",
+                "client_record_id": "client-3",
+                "client_record_version": 3,
+                "last_modified_time": "2026-01-10T06:03:30Z"
+            }
+        }
+    ],
+    "heart_rate": [
+        {
+            "bpm": 62,
+            "time": "2026-01-10T06:01:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 1",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000004",
+                "last_modified_time": "2026-01-10T06:04:30Z"
+            }
+        },
+        {
+            "time": "2026-01-10T06:02:00Z",
+            "avg": 70,
+            "min": 65,
+            "max": 80,
+            "bpm": 70,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                }
+            }
+        }
+    ],
+    "heart_rate_variability": [
+        {
+            "rmssd_millis": 41.5,
+            "time": "2026-01-10T06:03:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 2",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000005",
+                "last_modified_time": "2026-01-10T06:05:30Z"
+            }
+        },
+        {
+            "time": "2026-01-10T06:04:00Z",
+            "avg": 40.25,
+            "min": 30.0,
+            "max": 55.5,
+            "rmssd_millis": 40.25,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                }
+            }
+        }
+    ],
+    "distance": [
+        {
+            "meters": 812.5,
+            "start_time": "2026-01-10T06:00:00Z",
+            "end_time": "2026-01-10T06:15:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000006",
+                "last_modified_time": "2026-01-10T06:06:30Z"
+            }
+        }
+    ],
+    "active_calories": [
+        {
+            "calories": 55.25,
+            "start_time": "2026-01-10T06:00:00Z",
+            "end_time": "2026-01-10T06:15:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 1",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000007",
+                "last_modified_time": "2026-01-10T06:07:30Z"
+            }
+        }
+    ],
+    "total_calories": [
+        {
+            "calories": 1800.0,
+            "start_time": "2026-01-10T06:00:00Z",
+            "end_time": "2026-01-10T16:00:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 2",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000008",
+                "last_modified_time": "2026-01-10T06:08:30Z"
+            }
+        }
+    ],
+    "weight": [
+        {
+            "kilograms": 72.4,
+            "time": "2026-01-10T06:05:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000009",
+                "last_modified_time": "2026-01-10T06:09:00Z"
+            }
+        }
+    ],
+    "height": [
+        {
+            "meters": 1.78,
+            "time": "2026-01-03T07:20:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000010",
+                "last_modified_time": "2026-01-10T06:10:00Z"
+            }
+        }
+    ],
+    "blood_pressure": [
+        {
+            "systolic": 118.0,
+            "diastolic": 76.0,
+            "time": "2026-01-10T06:06:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000011",
+                "last_modified_time": "2026-01-10T06:11:00Z"
+            }
+        }
+    ],
+    "blood_glucose": [
+        {
+            "mmol_per_liter": 5.4,
+            "time": "2026-01-10T06:07:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000012",
+                "last_modified_time": "2026-01-10T06:12:00Z"
+            }
+        }
+    ],
+    "oxygen_saturation": [
+        {
+            "percentage": 97.0,
+            "time": "2026-01-10T06:08:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 1",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000013",
+                "last_modified_time": "2026-01-10T06:13:30Z"
+            }
+        },
+        {
+            "time": "2026-01-10T06:09:00Z",
+            "avg": 96.5,
+            "min": 95.0,
+            "max": 98.0,
+            "percentage": 96.5,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                }
+            }
+        }
+    ],
+    "body_temperature": [
+        {
+            "celsius": 36.6,
+            "time": "2026-01-10T06:10:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000014",
+                "last_modified_time": "2026-01-10T06:14:00Z"
+            }
+        }
+    ],
+    "skin_temperature": [
+        {
+            "time": "2026-01-10T06:11:00Z",
+            "delta_celsius": -0.25,
+            "baseline_celsius": 33.5,
+            "measurement_location": 1,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000015",
+                "last_modified_time": "2026-01-10T06:15:30Z"
+            }
+        },
+        {
+            "time": "2026-01-10T06:12:00Z",
+            "avg_delta_celsius": 0.1,
+            "min_delta_celsius": -0.2,
+            "max_delta_celsius": 0.3,
+            "delta_celsius": 0.1,
+            "measurement_location": 0,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                }
+            }
+        }
+    ],
+    "respiratory_rate": [
+        {
+            "rate": 14.5,
+            "time": "2026-01-10T06:13:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 1",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000016",
+                "last_modified_time": "2026-01-10T06:16:30Z"
+            }
+        },
+        {
+            "time": "2026-01-10T06:14:00Z",
+            "avg": 15.0,
+            "min": 13.0,
+            "max": 17.0,
+            "rate": 15.0,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                }
+            }
+        }
+    ],
+    "resting_heart_rate": [
+        {
+            "bpm": 54,
+            "time": "2026-01-10T06:15:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 2",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000017",
+                "last_modified_time": "2026-01-10T06:17:30Z"
+            }
+        }
+    ],
+    "exercise": [
+        {
+            "type": "running",
+            "title": "Morning run",
+            "start_time": "2026-01-10T06:30:00Z",
+            "end_time": "2026-01-10T07:15:00Z",
+            "duration_seconds": 2700,
+            "distance_meters": 8000.0,
+            "steps": 7600,
+            "avg_cadence_spm": 168.5,
+            "max_cadence_spm": 182.0,
+            "stride_length_m": 1.05,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000018",
+                "last_modified_time": "2026-01-10T06:18:30Z"
+            }
+        },
+        {
+            "type": "yoga",
+            "start_time": "2026-01-10T07:30:00Z",
+            "end_time": "2026-01-10T08:00:00Z",
+            "duration_seconds": 1800,
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 1",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000019",
+                "last_modified_time": "2026-01-10T06:19:30Z"
+            }
+        }
+    ],
+    "hydration": [
+        {
+            "liters": 0.25,
+            "start_time": "2026-01-10T06:20:00Z",
+            "end_time": "2026-01-10T06:21:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000020",
+                "last_modified_time": "2026-01-10T06:20:00Z"
+            }
+        }
+    ],
+    "nutrition": [
+        {
+            "calories": 520.0,
+            "protein_grams": 31.0,
+            "carbs_grams": 48.5,
+            "fat_grams": 18.0,
+            "sugar_grams": 6.0,
+            "sodium_grams": 0.9,
+            "dietary_fiber_grams": 7.5,
+            "name": "[AI estimate] Lunch",
+            "start_time": "2026-01-10T10:00:00Z",
+            "end_time": "2026-01-10T10:20:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000021",
+                "client_record_id": "client-21",
+                "client_record_version": 21,
+                "last_modified_time": "2026-01-10T06:21:30Z"
+            }
+        },
+        {
+            "calories": 90.0,
+            "carbs_grams": 21.0,
+            "start_time": "2026-01-10T11:00:00Z",
+            "end_time": "2026-01-10T11:01:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000022",
+                "last_modified_time": "2026-01-10T06:22:00Z"
+            }
+        }
+    ],
+    "basal_metabolic_rate": [
+        {
+            "watts": 78.5,
+            "time": "2026-01-10T06:16:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 2",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000023",
+                "last_modified_time": "2026-01-10T06:23:30Z"
+            }
+        }
+    ],
+    "body_fat": [
+        {
+            "percentage": 18.2,
+            "time": "2026-01-10T06:05:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000024",
+                "last_modified_time": "2026-01-10T06:24:00Z"
+            }
+        }
+    ],
+    "lean_body_mass": [
+        {
+            "kilograms": 59.2,
+            "time": "2026-01-10T06:05:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000025",
+                "last_modified_time": "2026-01-10T06:25:00Z"
+            }
+        }
+    ],
+    "body_water_mass": [
+        {
+            "kilograms": 41.0,
+            "time": "2026-01-10T06:05:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000026",
+                "last_modified_time": "2026-01-10T06:26:00Z"
+            }
+        }
+    ],
+    "bmi": [
+        {
+            "value": 22.850650170433028,
+            "time": "2026-01-10T06:05:00Z",
+            "weight_kg": 72.4,
+            "height_meters": 1.78
+        }
+    ],
+    "vo2_max": [
+        {
+            "ml_per_kg_per_min": 48.3,
+            "time": "2026-01-10T06:17:00Z",
+            "metadata": {
+                "data_origin": "com.example.tracker",
+                "recording_method": "automatically_recorded",
+                "device": {
+                    "manufacturer": "ExampleCo",
+                    "model": "Band 0",
+                    "type": 6
+                },
+                "id": "00000000-0000-4000-8000-000000000027",
+                "last_modified_time": "2026-01-10T06:27:30Z"
+            }
+        }
+    ],
+    "bone_mass": [
+        {
+            "kilograms": 3.1,
+            "time": "2026-01-10T06:05:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000028",
+                "last_modified_time": "2026-01-10T06:28:00Z"
+            }
+        }
+    ],
+    "menstruation_flow": [
+        {
+            "flow": 2,
+            "time": "2026-01-10T06:18:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000029",
+                "last_modified_time": "2026-01-10T06:29:00Z"
+            }
+        }
+    ],
+    "menstruation_period": [
+        {
+            "start_time": "2026-01-07T11:20:00Z",
+            "end_time": "2026-01-10T04:20:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000030",
+                "last_modified_time": "2026-01-10T06:30:00Z"
+            }
+        }
+    ],
+    "intermenstrual_bleeding": [
+        {
+            "time": "2026-01-10T06:19:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000031",
+                "last_modified_time": "2026-01-10T06:31:00Z"
+            }
+        }
+    ],
+    "ovulation_test": [
+        {
+            "result": 1,
+            "time": "2026-01-10T06:20:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000032",
+                "last_modified_time": "2026-01-10T06:32:00Z"
+            }
+        }
+    ],
+    "cervical_mucus": [
+        {
+            "appearance": 3,
+            "time": "2026-01-10T06:21:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000033",
+                "last_modified_time": "2026-01-10T06:33:00Z"
+            }
+        }
+    ],
+    "sexual_activity": [
+        {
+            "protection_used": 1,
+            "time": "2026-01-10T06:22:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000034",
+                "last_modified_time": "2026-01-10T06:34:00Z"
+            }
+        }
+    ],
+    "basal_body_temperature": [
+        {
+            "celsius": 36.4,
+            "measurement_location": 2,
+            "time": "2026-01-10T06:23:00Z",
+            "metadata": {
+                "data_origin": "com.example.scale",
+                "recording_method": "manual_entry",
+                "id": "00000000-0000-4000-9000-000000000035",
+                "last_modified_time": "2026-01-10T06:35:00Z"
+            }
+        }
+    ]
+}
