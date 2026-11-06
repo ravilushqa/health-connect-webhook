@@ -90,8 +90,13 @@ jobs:
           HEALTHCORE_KEYSTORE="$RUNNER_TEMP/healthcore.p12" ./gradlew :healthcore:assembleRelease
           rm -f "$RUNNER_TEMP/healthcore.p12"
           cp healthcore/build/outputs/apk/release/healthcore-release.apk "$RUNNER_TEMP/health-core.apk"
-          # Public certificate digest: compare with the one printed when the key was made.
-          "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify --print-certs "$RUNNER_TEMP/health-core.apk" | grep -i "SHA-256"
+          # The APK must be signed with the key whose public certificate digest was recorded
+          # when the key was made; anything else would not install over earlier builds.
+          expected="3c773a7528577e78c8450fef55442d221c6c2dbb00094838b0074c49d41a1269"
+          actual=$("$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify --print-certs "$RUNNER_TEMP/health-core.apk" \
+            | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          echo "certificate SHA-256: $actual"
+          test "$actual" = "$expected" || { echo "::error::APK is not signed with the Health Core key"; exit 1; }
 
       - name: Publish pre-release healthcore-nightly
         if: steps.key.outputs.present == 'true' && github.event_name != 'pull_request'

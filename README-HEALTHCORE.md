@@ -54,8 +54,9 @@ The release is signed with a PKCS12 keystore (alias `healthcore`) kept in two re
 secrets: `HEALTHCORE_KEYSTORE_B64` (the file, base64) and `HEALTHCORE_KEYSTORE_PASSWORD`.
 Without them the workflow skips the release. Keep a backup of the keystore outside GitHub:
 if it is lost, the next key's builds cannot be installed over the old ones (uninstall,
-then set the app up again). The workflow log prints the certificate's SHA-256 digest
-(`apksigner verify --print-certs`), which must match the one recorded when the key was made.
+then set the app up again). The workflow checks the APK's certificate (`apksigner verify --print-certs`) against the
+SHA-256 digest recorded when the key was made and fails on a mismatch:
+`3C:77:3A:75:28:57:7E:78:C8:45:0F:EF:55:44:2D:22:1C:6C:2D:BB:00:09:48:38:B0:07:4C:49:D4:1A:12:69`.
 
 ## Set up
 
