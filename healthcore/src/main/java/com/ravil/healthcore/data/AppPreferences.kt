@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.ravil.healthcore.core.model.HealthDataType
 import com.ravil.healthcore.core.model.Resolutions
+import com.ravil.healthcore.core.model.defaultResolutionMinutes
 import com.ravil.healthcore.core.net.HealthCoreHttp
 import com.ravil.healthcore.core.status.RunStatus
 import java.time.Instant
