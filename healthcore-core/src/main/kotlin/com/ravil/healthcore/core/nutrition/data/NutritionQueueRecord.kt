@@ -18,4 +18,6 @@ data class NutritionQueueRecord(
     @SerialName("sugar_g") val sugarG: Double? = null,
     @SerialName("sodium_mg") val sodiumMg: Double? = null,
     val description: String? = null,
+    /** breakfast, lunch, dinner or snack; absent for meals stored before health-core had it. */
+    @SerialName("meal_type") val mealType: String? = null,
 )

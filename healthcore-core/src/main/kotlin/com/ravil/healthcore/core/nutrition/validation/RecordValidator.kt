@@ -1,5 +1,6 @@
 package com.ravil.healthcore.core.nutrition.validation
 
+import com.ravil.healthcore.core.nutrition.data.MealKind
 import com.ravil.healthcore.core.nutrition.data.NutritionQueueRecord
 import java.time.Duration
 import java.time.OffsetDateTime
@@ -50,6 +51,16 @@ object RecordValidator {
 
         return null
     }
+
+    /**
+     * The record's meal type if it is one of the known values, else null (written as
+     * MEAL_TYPE_UNKNOWN). Deliberately not a validation error: the meal type is a label,
+     * not data, and rejecting the record would keep the meal itself (the calories) out of
+     * Health Connect and leave it unacked in the queue. It also keeps this build working
+     * if a newer server sends a value it does not know, as ignoreUnknownKeys does for
+     * new fields.
+     */
+    fun mealKind(record: NutritionQueueRecord): MealKind? = MealKind.fromWire(record.mealType)
 
     fun parseOffset(timeStr: String): OffsetDateTime? = try {
         OffsetDateTime.parse(timeStr)

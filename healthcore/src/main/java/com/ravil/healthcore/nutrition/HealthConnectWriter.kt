@@ -41,6 +41,9 @@ class HealthConnectWriter(private val context: Context) : HcWriterPort {
      * Optional fields (fiber, sugar, sodium) are mapped only when present — never guessed to zero.
      * sodium_mg from the server is converted to grams (÷1000) for the HC Mass field.
      *
+     * The meal type maps to NutritionRecord.mealType (HcMealType); a missing or unknown
+     * value is MEAL_TYPE_UNKNOWN, which Google Health shows as a snack.
+     *
      * Since NutritionRecord has no description field, the description is appended to the name
      * so AI-estimate annotations survive in the Health Connect record.
      */
@@ -63,6 +66,7 @@ class HealthConnectWriter(private val context: Context) : HcWriterPort {
                 sugar = record.sugarG?.let { Mass.grams(it) },
                 sodium = record.sodiumMg?.let { Mass.grams(it / 1000.0) },
                 name = buildRecordName(record),
+                mealType = HcMealType.of(RecordValidator.mealKind(record)),
                 metadata = Metadata(
                     clientRecordId = record.clientRecordId,
                     clientRecordVersion = record.clientRecordVersion.toLong(),
