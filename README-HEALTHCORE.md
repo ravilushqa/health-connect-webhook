@@ -113,6 +113,11 @@ SHA-256 digest recorded when the key was made and fails on a mismatch:
 
 Notes:
 
+- Meal types: health-core sends `meal_type` (`breakfast`, `lunch`, `dinner`, `snack`) and
+  Health Core writes it as `NutritionRecord.mealType`. Meals without it (queued before
+  health-core had the field) or with a value this build does not know are written as
+  `MEAL_TYPE_UNKNOWN` rather than rejected: the type is a label, and refusing the record
+  would keep the meal itself out of Health Connect. Google Health shows unknown as a snack.
 - Meals already written by Nutrition Bridge stay in Health Connect under its name. If such
   a meal is amended later, Health Core writes the new version under its own name and the
   old record stays (Health Connect scopes `clientRecordId` per app). Delete the old one in
